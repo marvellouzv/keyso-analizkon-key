@@ -60,8 +60,6 @@ type AnalyzeResponse = {
 
 type ParseSettings = {
   competitorsLimit: number;
-  competitorsTopPos: number;
-  mainMinPos: number;
   mainMaxPages: number;
   competitorsMaxPages: number;
   resultLimit: number;
@@ -73,8 +71,6 @@ const PRESET_OPTIONS: Array<{ id: string; label: string; settings: ParseSettings
     label: "Быстрый",
     settings: {
       competitorsLimit: 10,
-      competitorsTopPos: 10,
-      mainMinPos: 10,
       mainMaxPages: 10,
       competitorsMaxPages: 10,
       resultLimit: 500,
@@ -85,8 +81,6 @@ const PRESET_OPTIONS: Array<{ id: string; label: string; settings: ParseSettings
     label: "Баланс",
     settings: {
       competitorsLimit: 15,
-      competitorsTopPos: 10,
-      mainMinPos: 10,
       mainMaxPages: 20,
       competitorsMaxPages: 15,
       resultLimit: 1000,
@@ -97,8 +91,6 @@ const PRESET_OPTIONS: Array<{ id: string; label: string; settings: ParseSettings
     label: "Глубокий",
     settings: {
       competitorsLimit: 20,
-      competitorsTopPos: 20,
-      mainMinPos: 10,
       mainMaxPages: 30,
       competitorsMaxPages: 20,
       resultLimit: 2000,
@@ -165,8 +157,6 @@ function AnalyzerApp() {
   const [statusLogs, setStatusLogs] = React.useState<string[]>([]);
   const [settings, setSettings] = React.useState<ParseSettings>({
     competitorsLimit: 10,
-    competitorsTopPos: 10,
-    mainMinPos: 10,
     mainMaxPages: 10,
     competitorsMaxPages: 10,
     resultLimit: 500,
@@ -189,16 +179,14 @@ function AnalyzerApp() {
     mutationFn: async () => {
       setStatusLogs([]);
       addLog(`Запуск анализа для ${normalizedDomain}...`);
-      setTableCompetitorsTopPos(settings.competitorsTopPos);
-      setTableMainMinPos(settings.mainMinPos);
+      setTableCompetitorsTopPos(10);
+      setTableMainMinPos(10);
       setTableResultLimit(settings.resultLimit);
 
       const res = await axios.post("/api/analyze", {
         domain: normalizedDomain,
         base: region,
         competitors_limit: settings.competitorsLimit,
-        competitors_top_pos: settings.competitorsTopPos,
-        main_min_pos: settings.mainMinPos,
         main_max_pages: settings.mainMaxPages,
         competitors_max_pages: settings.competitorsMaxPages,
         result_limit: settings.resultLimit,
@@ -222,7 +210,10 @@ function AnalyzerApp() {
       "Получаем ключи исследуемого сайта...",
       "Ищем конкурентов...",
       "Собираем данные конкурентов с учетом лимитов API...",
-      "Обрабатываем данные в Pandas...",
+      "Нормализуем позиции и удаляем дубли...",
+      "Объединяем фразы сайта и конкурентов...",
+      "Считаем [!Wordstat] и метрики конкуренции...",
+      "Формируем итоговую таблицу и сортируем результаты...",
     ];
 
     let i = 0;
@@ -283,16 +274,24 @@ function AnalyzerApp() {
         });
       })
       .map((row) => {
+        const maskedRow: Record<string, number | string> = { ...row };
+        for (const competitor of allCompetitors) {
+          const compPos = Number(maskedRow[competitor] ?? 101);
+          if (!Number.isFinite(compPos) || compPos > tableCompetitorsTopPos) {
+            maskedRow[competitor] = 101;
+          }
+        }
+
         const competitorsTopCount = allCompetitors.reduce((acc, competitor) => {
-          const compPos = Number(row[competitor] ?? 101);
+          const compPos = Number(maskedRow[competitor] ?? 101);
           return acc + (Number.isFinite(compPos) && compPos <= tableCompetitorsTopPos ? 1 : 0);
         }, 0);
 
-        const wordstat = Number(row["[!Wordstat]"] ?? 0);
+        const wordstat = Number(maskedRow["[!Wordstat]"] ?? 0);
         const opportunityScore = Number((wordstat * (1 + competitorsTopCount * 0.6)).toFixed(2));
 
         return {
-          ...row,
+          ...maskedRow,
           "[!Wordstat]": wordstat,
           competitors_top10_count: competitorsTopCount,
           opportunity_score: opportunityScore,
@@ -442,6 +441,21 @@ function AnalyzerApp() {
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
               <label className="text-sm text-slate-700">
+                <FieldLabel text="Глубина для сайта" hint="Сколько страниц ключей собрать для исследуемого сайта." />
+                <select
+                  className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                  value={settings.mainMaxPages}
+                  onChange={(e) => setSettings((s) => ({ ...s, mainMaxPages: Number(e.target.value) }))}
+                >
+                  {[10, 15, 20, 30].map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-sm text-slate-700">
                 <FieldLabel text="Количество конкурентов" hint="Сколько конкурентов запрашивать у Keys.so." />
                 <select
                   className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
@@ -457,22 +471,7 @@ function AnalyzerApp() {
               </label>
 
               <label className="text-sm text-slate-700">
-                <FieldLabel text="Страниц для сайта" hint="Сколько страниц ключей собрать для исследуемого сайта." />
-                <select
-                  className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
-                  value={settings.mainMaxPages}
-                  onChange={(e) => setSettings((s) => ({ ...s, mainMaxPages: Number(e.target.value) }))}
-                >
-                  {[10, 15, 20, 30].map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="text-sm text-slate-700">
-                <FieldLabel text="Страниц для конкурентов" hint="Сколько страниц ключей собрать для каждого конкурента." />
+                <FieldLabel text="Глубина для конкурентов" hint="Сколько страниц ключей собрать для каждого конкурента." />
                 <select
                   className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
                   value={settings.competitorsMaxPages}
@@ -501,35 +500,6 @@ function AnalyzerApp() {
                 </select>
               </label>
 
-              <label className="text-sm text-slate-700">
-                <FieldLabel text="Топ позиций конкурентов" hint="Учитываются позиции конкурентов от 1 до выбранного значения." />
-                <select
-                  className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
-                  value={settings.competitorsTopPos}
-                  onChange={(e) => setSettings((s) => ({ ...s, competitorsTopPos: Number(e.target.value) }))}
-                >
-                  {[10, 20, 30, 50].map((v) => (
-                    <option key={v} value={v}>
-                      1-{v}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="text-sm text-slate-700">
-                <FieldLabel text="Мин. позиция сайта" hint="Оставляем запросы, где позиция исследуемого сайта строго больше этого порога." />
-                <select
-                  className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
-                  value={settings.mainMinPos}
-                  onChange={(e) => setSettings((s) => ({ ...s, mainMinPos: Number(e.target.value) }))}
-                >
-                  {[10, 20, 30, 40].map((v) => (
-                    <option key={v} value={v}>
-                      {">"} {v}
-                    </option>
-                  ))}
-                </select>
-              </label>
             </div>
           </div>
 

@@ -437,3 +437,56 @@
   - `Мин. позиция сайта`
 - They now appear after `Макс. строк в таблице`.
 - Validation: `npx tsc --noEmit` passed.
+## [2026-04-21] - Removed backend hard competitor-top filter for table_data
+- Updated `backend/services/analyzer.py` to stop dropping rows by `competitors_top10_count > 0` on backend.
+- Now positions `11-50` are not hard-cut from backend `table_data`.
+- Intended behavior: filtering by competitor top range is handled in interactive local table filters in UX.
+- Validation: Python syntax check passed; `npx tsc --noEmit` passed.
+## [2026-04-21] - Root cause check for competitor-top local filter
+- Investigated why `Топ позиций конкурентов` seemed not to change table.
+- Found active backend instance was effectively serving old response shape (no `table_pool_data`) due SQLite `disk I/O error` in project path.
+- Fix:
+  - switched DB storage path to temp dir in `backend/database.py` (`%TEMP%/keyso-analiz-key-storage/sql_app.db`).
+  - restarted backend successfully.
+- Verification (`/api/analyze`): response now includes `table_pool_data` and local top-range counts differ:
+  - top10: 26
+  - top20: 38
+  - top30: 44
+  - top50: 55
+- Conclusion: local filter recalculation now has full source pool and can change table as expected after a new analysis run.
+## [2026-04-21] - Highlighted analyzed domain column in final table
+- Updated `frontend/src/components/ResultTable.tsx`:
+  - analyzed site column (first domain in `domains`) is now highlighted with pale blue background
+  - applies to both header and body cells
+- Validation: `npx tsc --noEmit` passed.
+## [2026-04-21] - Renamed depth fields in startup form
+- In `frontend/src/App.tsx` renamed labels:
+  - `Страниц для сайта` -> `Глубина для сайта`
+  - `Страниц для конкурентов` -> `Глубина для конкурентов`
+- Validation: `npx tsc --noEmit` passed.
+## [2026-04-21] - Fixed table competitor positions visibility by local top filter
+- Updated local table recalculation in `frontend/src/App.tsx`.
+- When `Топ позиций конкурентов` changes, competitor positions above selected top are now masked to `101` (displayed as `-` in table).
+- Result: table now hides non-matching competitor positions, not only rows.
+- Validation: `npx tsc --noEmit` passed.
+## [2026-04-21] - Reordered startup form: site depth first
+- In `frontend/src/App.tsx`, moved `Глубина для сайта` to the first position in the analysis settings grid.
+- Validation: `npx tsc --noEmit` passed.
+## [2026-04-21] - Removed start-form top/min filters and set table defaults
+- In `frontend/src/App.tsx` removed from startup form:
+  - `Топ позиций конкурентов`
+  - `Мин. позиция сайта`
+- Removed these fields from startup settings/presets and from `/api/analyze` payload.
+- Control remains only in local filters near final table.
+- Default local filter values are now reset on each analysis run to:
+  - `Топ позиций конкурентов`: `1-10`
+  - `Мин. позиция сайта`: `> 10`
+- Validation: `npx tsc --noEmit` passed.
+## [2026-04-21] - Expanded Pandas processing status details
+- Updated pending status steps in `frontend/src/App.tsx`.
+- Replaced single generic `Обрабатываем данные в Pandas...` with detailed sub-steps:
+  - normalize positions + dedup
+  - join site and competitor phrases
+  - calculate `[!Wordstat]` and competition metrics
+  - build and sort final table
+- Validation: `npx tsc --noEmit` passed.

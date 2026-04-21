@@ -1,7 +1,10 @@
 backend/.env
+.env
+.env.*
 backend/__pycache__/
 backend/services/__pycache__/
 backend/storage/*.db
+backend/storage/
 frontend/node_modules/
 frontend/dist/
 *.log

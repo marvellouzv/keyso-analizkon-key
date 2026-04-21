@@ -130,9 +130,8 @@ class SEOAnalyzer:
         else:
             final_df["competitors_top10_count"] = 0
 
-        # Keep only rows where at least one competitor is in top-10.
-        if competitor_columns:
-            final_df = final_df[final_df["competitors_top10_count"] > 0]
+        # Do not hard-filter rows by competitor top range on backend.
+        # The final UI table applies interactive local filters.
         after_competitor_filter = len(final_df)
         stage_after_comp_filter = SEOAnalyzer._stage_preview(final_df, stage_preview_limit)
 

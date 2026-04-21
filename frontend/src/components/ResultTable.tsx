@@ -15,6 +15,7 @@ const getPosColor = (pos: number) => {
 };
 
 export const ResultTable: React.FC<ResultTableProps> = ({ data, domains }) => {
+  const mainDomain = domains[0];
   const topScrollRef = React.useRef<HTMLDivElement | null>(null);
   const bottomScrollRef = React.useRef<HTMLDivElement | null>(null);
   const contentRef = React.useRef<HTMLTableElement | null>(null);
@@ -210,7 +211,10 @@ export const ResultTable: React.FC<ResultTableProps> = ({ data, domains }) => {
                 />
               </th>
               {domains.map((d) => (
-                <th key={d} className="relative p-4 text-center font-semibold text-slate-700">
+                <th
+                  key={d}
+                  className={`relative p-4 text-center font-semibold ${d === mainDomain ? "bg-sky-50 text-sky-700" : "text-slate-700"}`}
+                >
                   <button type="button" onClick={() => onSort(d)} className={headerBtnClass}>
                     {d.length > 15 ? `${d.substring(0, 12)}...` : d} <span className="text-xs">{sortIndicator(d)}</span>
                   </button>
@@ -238,7 +242,7 @@ export const ResultTable: React.FC<ResultTableProps> = ({ data, domains }) => {
                 {domains.map((d) => {
                   const pos = Number(row[d] ?? 101);
                   return (
-                    <td key={d} className={`p-4 text-center ${getPosColor(pos)}`}>
+                    <td key={d} className={`p-4 text-center ${d === mainDomain ? "bg-sky-50/70" : ""} ${getPosColor(pos)}`}>
                       {pos > 100 ? "-" : pos}
                     </td>
                   );

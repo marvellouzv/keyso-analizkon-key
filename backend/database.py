@@ -1,10 +1,11 @@
-﻿from pathlib import Path
+﻿import tempfile
+from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 BASE_DIR = Path(__file__).resolve().parent
-STORAGE_DIR = BASE_DIR / "storage"
+STORAGE_DIR = Path(tempfile.gettempdir()) / "keyso-analiz-key-storage"
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{(STORAGE_DIR / 'sql_app.db').as_posix()}"
