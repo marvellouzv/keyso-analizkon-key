@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+sqlalchemy
+alembic
+httpx
+pandas
+openpyxl
+python-dotenv
+pydantic
+pydantic-settings
