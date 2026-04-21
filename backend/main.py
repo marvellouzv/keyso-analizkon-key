@@ -1,4 +1,5 @@
-﻿import os
+﻿import asyncio
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -48,14 +49,12 @@ async def analyze(
 ):
     if not KEYSO_TOKEN:
         raise HTTPException(status_code=500, detail="KEYSO_TOKEN is not configured")
-    if request.main_min_pos >= request.main_max_pos:
-        raise HTTPException(status_code=400, detail="main_min_pos must be lower than main_max_pos")
 
     try:
         main_keys = await keys_client.get_keywords_top_positions(
             request.domain,
             request.base,
-            max_pos=request.main_max_pos,
+            max_pos=None,
             per_page=100,
             max_pages=request.main_max_pages,
             sort="ws|desc",
@@ -68,24 +67,31 @@ async def analyze(
             request.base,
             limit=request.competitors_limit,
         )
-        comp_results = {}
-        for comp in competitors:
-            comp_results[comp] = await keys_client.get_keywords_top_positions(
-                comp,
-                request.base,
-                max_pos=request.competitors_top_pos,
-                per_page=100,
-                max_pages=request.competitors_max_pages,
-            )
 
-        df = await SEOAnalyzer.process_data(
+        sem = asyncio.Semaphore(2)
+
+        async def fetch_competitor(comp: str):
+            async with sem:
+                data = await keys_client.get_keywords_top_positions(
+                    comp,
+                    request.base,
+                    max_pos=request.competitors_top_pos,
+                    per_page=100,
+                    max_pages=request.competitors_max_pages,
+                )
+                return comp, data
+
+        comp_pairs = await asyncio.gather(*(fetch_competitor(comp) for comp in competitors))
+        comp_results = {comp: data for comp, data in comp_pairs}
+
+        df, diagnostics, stage_results = await SEOAnalyzer.process_data(
             request.domain,
             main_keys,
             comp_results,
             competitors_top_pos=request.competitors_top_pos,
             main_min_pos=request.main_min_pos,
-            main_max_pos=request.main_max_pos,
             result_limit=request.result_limit,
+            stage_preview_limit=min(request.result_limit, 3000),
         )
         result_data = df.to_dict(orient="records")
 
@@ -103,6 +109,8 @@ async def analyze(
             "domain": request.domain,
             "competitors": competitors,
             "table_data": result_data,
+            "diagnostics": diagnostics,
+            "stage_results": stage_results,
         }
     except HTTPException:
         raise

@@ -46,17 +46,64 @@ type AnalyzeResponse = {
   domain: string;
   competitors: string[];
   table_data: Array<Record<string, number | string>>;
+  diagnostics: {
+    main_keywords_raw: number;
+    main_keywords_unique: number;
+    after_join: number;
+    after_main_position_filter: number;
+    after_competitor_filter: number;
+    final_output: number;
+  };
+  stage_results: Record<string, Array<Record<string, number | string>>>;
 };
 
 type ParseSettings = {
   competitorsLimit: number;
   competitorsTopPos: number;
   mainMinPos: number;
-  mainMaxPos: number;
   mainMaxPages: number;
   competitorsMaxPages: number;
   resultLimit: number;
 };
+
+const PRESET_OPTIONS: Array<{ id: string; label: string; settings: ParseSettings }> = [
+  {
+    id: "fast",
+    label: "Быстрый",
+    settings: {
+      competitorsLimit: 10,
+      competitorsTopPos: 10,
+      mainMinPos: 10,
+      mainMaxPages: 5,
+      competitorsMaxPages: 3,
+      resultLimit: 500,
+    },
+  },
+  {
+    id: "balanced",
+    label: "Баланс",
+    settings: {
+      competitorsLimit: 10,
+      competitorsTopPos: 10,
+      mainMinPos: 10,
+      mainMaxPages: 10,
+      competitorsMaxPages: 5,
+      resultLimit: 500,
+    },
+  },
+  {
+    id: "deep",
+    label: "Глубокий",
+    settings: {
+      competitorsLimit: 15,
+      competitorsTopPos: 20,
+      mainMinPos: 10,
+      mainMaxPages: 15,
+      competitorsMaxPages: 10,
+      resultLimit: 1000,
+    },
+  },
+];
 
 function FieldLabel({ text, hint }: { text: string; hint: string }) {
   return (
@@ -79,11 +126,12 @@ function AnalyzerApp() {
     competitorsLimit: 10,
     competitorsTopPos: 10,
     mainMinPos: 10,
-    mainMaxPos: 100,
     mainMaxPages: 10,
     competitorsMaxPages: 5,
     resultLimit: 500,
   });
+  const [activePreset, setActivePreset] = React.useState<string>("balanced");
+  const [openedStage, setOpenedStage] = React.useState<string | null>(null);
 
   const normalizedDomain = domain.trim().toLowerCase();
   const isDomainValid = DOMAIN_PATTERN.test(normalizedDomain);
@@ -104,7 +152,6 @@ function AnalyzerApp() {
         competitors_limit: settings.competitorsLimit,
         competitors_top_pos: settings.competitorsTopPos,
         main_min_pos: settings.mainMinPos,
-        main_max_pos: settings.mainMaxPos,
         main_max_pages: settings.mainMaxPages,
         competitors_max_pages: settings.competitorsMaxPages,
         result_limit: settings.resultLimit,
@@ -168,10 +215,42 @@ function AnalyzerApp() {
     if (!mutation.data) {
       return [];
     }
-    return mutation.data.competitors.filter((competitor) =>
-      mutation.data!.table_data.some((row) => Number(row[competitor] ?? 101) <= 100),
-    );
+    const competitorStats = mutation.data.competitors
+      .map((competitor) => {
+        const foundCount = mutation.data!.table_data.reduce((acc, row) => {
+          const pos = Number(row[competitor] ?? 101);
+          return acc + (Number.isFinite(pos) && pos < 101 ? 1 : 0);
+        }, 0);
+        return { competitor, foundCount };
+      })
+      .filter((item) => item.foundCount > 0)
+      .sort((a, b) => {
+        if (b.foundCount !== a.foundCount) {
+          return b.foundCount - a.foundCount;
+        }
+        return a.competitor.localeCompare(b.competitor);
+      });
+
+    return competitorStats.map((item) => item.competitor);
   }, [mutation.data]);
+
+  const stageOrder = [
+    "main_keywords_raw",
+    "main_keywords_unique",
+    "after_join",
+    "after_main_position_filter",
+    "after_competitor_filter",
+    "final_output",
+  ] as const;
+
+  const stageLabels: Record<(typeof stageOrder)[number], string> = {
+    main_keywords_raw: "Сырые ключи сайта",
+    main_keywords_unique: "Уникальные ключи сайта",
+    after_join: "После объединения с конкурентами",
+    after_main_position_filter: "После фильтра позиций сайта",
+    after_competitor_filter: "После фильтра конкурентов",
+    final_output: "Финальный результат",
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8">
@@ -232,6 +311,25 @@ function AnalyzerApp() {
 
           <div className="w-full rounded-lg border border-slate-200 bg-slate-50 p-3">
             <p className="mb-3 text-sm font-semibold text-slate-700">Глубина парсинга</p>
+            <div className="mb-3 flex flex-wrap gap-2">
+              {PRESET_OPTIONS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => {
+                    setSettings(preset.settings);
+                    setActivePreset(preset.id);
+                  }}
+                  className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+                    activePreset === preset.id
+                      ? "border-blue-600 bg-blue-600 text-white"
+                      : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
               <label className="text-sm text-slate-700">
                 <FieldLabel text="Количество конкурентов" hint="Сколько конкурентов запрашивать у Keys.so." />
@@ -240,7 +338,7 @@ function AnalyzerApp() {
                   value={settings.competitorsLimit}
                   onChange={(e) => setSettings((s) => ({ ...s, competitorsLimit: Number(e.target.value) }))}
                 >
-                  {[10, 15, 20].map((v) => (
+                  {[5, 10, 15, 20].map((v) => (
                     <option key={v} value={v}>
                       {v}
                     </option>
@@ -264,7 +362,7 @@ function AnalyzerApp() {
               </label>
 
               <label className="text-sm text-slate-700">
-                <FieldLabel text="Мин. позиция сайта" hint="Запросы с позицией сайта выше этого порога исключаются (используется > порога)." />
+                <FieldLabel text="Мин. позиция сайта" hint="Оставляем запросы, где позиция исследуемого сайта строго больше этого порога." />
                 <select
                   className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
                   value={settings.mainMinPos}
@@ -273,21 +371,6 @@ function AnalyzerApp() {
                   {[10, 20, 30, 50].map((v) => (
                     <option key={v} value={v}>
                       {">"} {v}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="text-sm text-slate-700">
-                <FieldLabel text="Макс. позиция сайта" hint="Верхняя граница позиции исследуемого сайта в выборке." />
-                <select
-                  className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
-                  value={settings.mainMaxPos}
-                  onChange={(e) => setSettings((s) => ({ ...s, mainMaxPos: Number(e.target.value) }))}
-                >
-                  {[100, 150, 200].map((v) => (
-                    <option key={v} value={v}>
-                      {v}
                     </option>
                   ))}
                 </select>
@@ -418,6 +501,119 @@ function AnalyzerApp() {
                     <p className="text-2xl font-bold text-green-900">{mutation.data.competitors.length}</p>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="mb-4 text-lg font-semibold">Диагностика этапов</h3>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <div className="rounded-lg bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">
+                    <FieldLabel
+                      text="Сырые ключи сайта"
+                      hint="Количество записей ключей, полученных от Keys.so для исследуемого домена до нормализации и удаления дублей."
+                    />
+                  </p>
+                  <p className="text-xl font-bold text-slate-900">{mutation.data.diagnostics.main_keywords_raw}</p>
+                </div>
+                <div className="rounded-lg bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">
+                    <FieldLabel
+                      text="Уникальные ключи сайта"
+                      hint="Количество уникальных запросов после группировки по слову и выбора лучшей позиции сайта."
+                    />
+                  </p>
+                  <p className="text-xl font-bold text-slate-900">{mutation.data.diagnostics.main_keywords_unique}</p>
+                </div>
+                <div className="rounded-lg bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">
+                    <FieldLabel
+                      text="После объединения с конкурентами"
+                      hint="Количество строк после присоединения колонок позиций конкурентов к запросам исследуемого сайта."
+                    />
+                  </p>
+                  <p className="text-xl font-bold text-slate-900">{mutation.data.diagnostics.after_join}</p>
+                </div>
+                <div className="rounded-lg bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">
+                    <FieldLabel
+                      text="После фильтра позиций сайта"
+                      hint="Сколько строк осталось после фильтра по минимальной позиции исследуемого сайта."
+                    />
+                  </p>
+                  <p className="text-xl font-bold text-slate-900">{mutation.data.diagnostics.after_main_position_filter}</p>
+                </div>
+                <div className="rounded-lg bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">
+                    <FieldLabel
+                      text="После фильтра конкурентов"
+                      hint="Сколько строк осталось после условия: хотя бы один конкурент попадает в заданный топ по позиции."
+                    />
+                  </p>
+                  <p className="text-xl font-bold text-slate-900">{mutation.data.diagnostics.after_competitor_filter}</p>
+                </div>
+                <div className="rounded-lg bg-blue-50 p-3">
+                  <p className="text-xs text-blue-600">
+                    <FieldLabel
+                      text="Итог в таблице"
+                      hint="Финальное количество строк после сортировки и ограничения result_limit."
+                    />
+                  </p>
+                  <p className="text-xl font-bold text-blue-900">{mutation.data.diagnostics.final_output}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="mb-4 text-lg font-semibold">Результаты по стадиям</h3>
+              <div className="space-y-3">
+                {stageOrder.map((stageKey) => {
+                  const rows = mutation.data.stage_results?.[stageKey] ?? [];
+                  const isOpen = openedStage === stageKey;
+                  const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+                  return (
+                    <div key={stageKey} className="overflow-hidden rounded-lg border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setOpenedStage((prev) => (prev === stageKey ? null : stageKey))}
+                        className="flex w-full items-center justify-between bg-slate-50 px-4 py-3 text-left hover:bg-slate-100"
+                      >
+                        <span className="font-medium text-slate-800">{stageLabels[stageKey]}</span>
+                        <span className="text-sm text-slate-500">{rows.length} строк</span>
+                      </button>
+                      {isOpen && (
+                        <div className="overflow-x-auto p-3">
+                          {rows.length === 0 ? (
+                            <p className="text-sm text-slate-500">На этом этапе нет строк.</p>
+                          ) : (
+                            <table className="w-max min-w-full border-collapse text-left text-sm">
+                              <thead>
+                                <tr className="border-b border-slate-200">
+                                  {headers.map((h) => (
+                                    <th key={h} className="whitespace-nowrap p-2 font-semibold text-slate-700">
+                                      {h}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {rows.map((row, idx) => (
+                                  <tr key={idx} className="border-b border-slate-100">
+                                    {headers.map((h) => (
+                                      <td key={`${idx}-${h}`} className="whitespace-nowrap p-2 text-slate-700">
+                                        {String(row[h] ?? "")}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 

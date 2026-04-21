@@ -7,6 +7,13 @@ import pandas as pd
 
 class SEOAnalyzer:
     @staticmethod
+    def _stage_preview(df: pd.DataFrame, limit: int = 50) -> List[Dict]:
+        if df.empty:
+            return []
+        preview = df.head(limit).copy()
+        return preview.to_dict(orient="records")
+
+    @staticmethod
     def _domain_positions_df(keywords: List[Dict], domain: str) -> pd.DataFrame:
         if not keywords:
             return pd.DataFrame(columns=["word", domain])
@@ -59,16 +66,36 @@ class SEOAnalyzer:
         competitors_data: Dict[str, List[Dict]],
         competitors_top_pos: int = 10,
         main_min_pos: int = 10,
-        main_max_pos: int = 100,
         result_limit: int = 500,
-    ):
+        stage_preview_limit: int = 500,
+    ) -> tuple[pd.DataFrame, Dict[str, int], Dict[str, List[Dict]]]:
         if not main_keywords:
-            return pd.DataFrame(columns=["word", "[!Wordstat]", "competitors_top10_count", main_domain])
+            return (
+                pd.DataFrame(columns=["word", "[!Wordstat]", "competitors_top10_count", main_domain]),
+                {
+                    "main_keywords_raw": 0,
+                    "main_keywords_unique": 0,
+                    "after_join": 0,
+                    "after_main_position_filter": 0,
+                    "after_competitor_filter": 0,
+                    "final_output": 0,
+                },
+                {
+                    "main_keywords_raw": [],
+                    "main_keywords_unique": [],
+                    "after_join": [],
+                    "after_main_position_filter": [],
+                    "after_competitor_filter": [],
+                    "final_output": [],
+                },
+            )
 
         df_main = SEOAnalyzer._domain_positions_df(main_keywords, main_domain)
-        # Keep the analyzed site as the base universe of queries.
-        # This guarantees we always return rows where the main site has positions.
-        final_df = df_main.copy()
+        main_keywords_raw = len(main_keywords)
+        main_keywords_unique = len(df_main)
+        stage_main_raw = main_keywords[:stage_preview_limit]
+        # Keep analyzed site queries as base and use index join for faster assembly.
+        final_df = df_main.set_index("word")
 
         for comp_domain, keywords in competitors_data.items():
             if not keywords:
@@ -76,14 +103,18 @@ class SEOAnalyzer:
                 continue
 
             df_comp = SEOAnalyzer._domain_positions_df(keywords, comp_domain)
-            # Competitors are attached only for matching queries from the main site.
-            final_df = pd.merge(final_df, df_comp, on="word", how="left")
+            final_df = final_df.join(df_comp.set_index("word")[[comp_domain]], how="left")
 
-        final_df = final_df.fillna(101)
+        final_df = final_df.fillna(101).reset_index()
+        after_join = len(final_df)
         competitor_columns = list(competitors_data.keys())
+        stage_main_unique = SEOAnalyzer._stage_preview(df_main, stage_preview_limit)
+        stage_after_join = SEOAnalyzer._stage_preview(final_df, stage_preview_limit)
 
-        # Keep only rows where the analyzed site is ranked in the requested range.
-        final_df = final_df[(final_df[main_domain] > main_min_pos) & (final_df[main_domain] <= main_max_pos)]
+        # Keep only rows where the analyzed site rank is below the selected threshold.
+        final_df = final_df[final_df[main_domain] > main_min_pos]
+        after_main_position_filter = len(final_df)
+        stage_after_main_filter = SEOAnalyzer._stage_preview(final_df, stage_preview_limit)
 
         if competitor_columns:
             final_df["competitors_top10_count"] = (
@@ -95,6 +126,8 @@ class SEOAnalyzer:
         # Keep only rows where at least one competitor is in top-10.
         if competitor_columns:
             final_df = final_df[final_df["competitors_top10_count"] > 0]
+        after_competitor_filter = len(final_df)
+        stage_after_comp_filter = SEOAnalyzer._stage_preview(final_df, stage_preview_limit)
 
         wordstat = SEOAnalyzer._wordstat_map(main_keywords, competitors_data)
         final_df["[!Wordstat]"] = final_df["word"].map(wordstat).fillna(0).astype(int)
@@ -119,7 +152,25 @@ class SEOAnalyzer:
             by=["opportunity_score", "competitors_top10_count", "[!Wordstat]", "word"],
             ascending=[False, False, False, True],
         )
-        return final_df.head(result_limit)
+        final_df = final_df.head(result_limit)
+        stage_final_output = SEOAnalyzer._stage_preview(final_df, stage_preview_limit)
+        diagnostics = {
+            "main_keywords_raw": int(main_keywords_raw),
+            "main_keywords_unique": int(main_keywords_unique),
+            "after_join": int(after_join),
+            "after_main_position_filter": int(after_main_position_filter),
+            "after_competitor_filter": int(after_competitor_filter),
+            "final_output": int(len(final_df)),
+        }
+        stage_results = {
+            "main_keywords_raw": stage_main_raw,
+            "main_keywords_unique": stage_main_unique,
+            "after_join": stage_after_join,
+            "after_main_position_filter": stage_after_main_filter,
+            "after_competitor_filter": stage_after_comp_filter,
+            "final_output": stage_final_output,
+        }
+        return final_df, diagnostics, stage_results
 
     @staticmethod
     def save_to_excel(df: pd.DataFrame, filename: str) -> str:

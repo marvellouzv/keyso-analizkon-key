@@ -1,6 +1,6 @@
 ﻿import asyncio
 import time
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import httpx
 
@@ -33,7 +33,7 @@ class KeysSoClient:
         client: httpx.AsyncClient,
         url: str,
         params: Dict,
-        max_attempts: int = 12,
+        max_attempts: int = 20,
         delay_seconds: int = 5,
     ) -> httpx.Response:
         for attempt in range(1, max_attempts + 1):
@@ -42,6 +42,12 @@ class KeysSoClient:
                 resp = await client.get(url, params=params, headers=self.headers)
             except httpx.RequestError as exc:
                 raise RuntimeError(f"Cannot connect to Keys.so API: {exc!r}") from exc
+
+            if resp.status_code == 429:
+                backoff = min(12, 2 + attempt)
+                print(f"      [API] Rate limited (429), retry in {backoff}s...")
+                await asyncio.sleep(backoff)
+                continue
 
             if resp.status_code != 202:
                 return resp
@@ -114,7 +120,7 @@ class KeysSoClient:
         self,
         domain: str,
         base: str,
-        max_pos: int = 10,
+        max_pos: Optional[int] = 10,
         per_page: int = 100,
         max_pages: int = 5,
         sort: str = "pos|asc",
@@ -129,10 +135,11 @@ class KeysSoClient:
                     "domain": domain,
                     "base": base,
                     "per_page": per_page,
-                    "current_page": page,
+                    "page": page,
                     "sort": sort,
-                    "filter": f"pos<={max_pos}",
                 }
+                if max_pos is not None:
+                    params["filter"] = f"pos<={max_pos}"
                 print(f"      [API] Request top positions for {domain}, page {page}...")
                 resp = await self._get_with_report_wait(client, url, params)
                 print(f"      [API] Response: {resp.status_code}")
@@ -159,9 +166,9 @@ class KeysSoClient:
                     except (TypeError, ValueError):
                         continue
 
-                    if pos <= max_pos:
+                    if max_pos is None or pos <= max_pos:
                         collected.append(item)
-                    elif sort == "pos|asc":
+                    elif max_pos is not None and sort == "pos|asc":
                         stop = True
                         break
 

@@ -1,32 +1,32 @@
-# История изменений (handoff.md)
+﻿# РСЃС‚РѕСЂРёСЏ РёР·РјРµРЅРµРЅРёР№ (handoff.md)
 
-## [2026-04-21] - Инициализация проекта
+## [2026-04-21] - РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ РїСЂРѕРµРєС‚Р°
 
-### Добавлено:
+### Р”РѕР±Р°РІР»РµРЅРѕ:
 - **Backend:**
-    - Базовая структура на FastAPI.
-    - Интеграция с SQLite через SQLAlchemy.
-    - Клиент `KeysSoClient` с поддержкой асинхронного Rate Limiting.
-    - Сервис `SEOAnalyzer` для объединения данных через Pandas.
-    - Эндпоинты `/api/analyze` и `/api/history`.
+    - Р‘Р°Р·РѕРІР°СЏ СЃС‚СЂСѓРєС‚СѓСЂР° РЅР° FastAPI.
+    - РРЅС‚РµРіСЂР°С†РёСЏ СЃ SQLite С‡РµСЂРµР· SQLAlchemy.
+    - РљР»РёРµРЅС‚ `KeysSoClient` СЃ РїРѕРґРґРµСЂР¶РєРѕР№ Р°СЃРёРЅС…СЂРѕРЅРЅРѕРіРѕ Rate Limiting.
+    - РЎРµСЂРІРёСЃ `SEOAnalyzer` РґР»СЏ РѕР±СЉРµРґРёРЅРµРЅРёСЏ РґР°РЅРЅС‹С… С‡РµСЂРµР· Pandas.
+    - Р­РЅРґРїРѕРёРЅС‚С‹ `/api/analyze` Рё `/api/history`.
 - **Frontend:**
-    - Инициализация Vite + React + TS.
-    - Настройка Zustand для управления состоянием формы.
-    - Компонент `ResultTable` с цветовой индикацией позиций (1-3, 4-10, 10+).
-    - Визуализация пересечения запросов через Recharts (BarChart).
-    - Анимации загрузки через Framer Motion.
-- **Документация:**
-    - `README.md` с инструкциями по запуску.
-    - `agent.md` с правилами разработки.
-    - `handoff.md` для отслеживания прогресса.
+    - РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ Vite + React + TS.
+    - РќР°СЃС‚СЂРѕР№РєР° Zustand РґР»СЏ СѓРїСЂР°РІР»РµРЅРёСЏ СЃРѕСЃС‚РѕСЏРЅРёРµРј С„РѕСЂРјС‹.
+    - РљРѕРјРїРѕРЅРµРЅС‚ `ResultTable` СЃ С†РІРµС‚РѕРІРѕР№ РёРЅРґРёРєР°С†РёРµР№ РїРѕР·РёС†РёР№ (1-3, 4-10, 10+).
+    - Р’РёР·СѓР°Р»РёР·Р°С†РёСЏ РїРµСЂРµСЃРµС‡РµРЅРёСЏ Р·Р°РїСЂРѕСЃРѕРІ С‡РµСЂРµР· Recharts (BarChart).
+    - РђРЅРёРјР°С†РёРё Р·Р°РіСЂСѓР·РєРё С‡РµСЂРµР· Framer Motion.
+- **Р”РѕРєСѓРјРµРЅС‚Р°С†РёСЏ:**
+    - `README.md` СЃ РёРЅСЃС‚СЂСѓРєС†РёСЏРјРё РїРѕ Р·Р°РїСѓСЃРєСѓ.
+    - `agent.md` СЃ РїСЂР°РІРёР»Р°РјРё СЂР°Р·СЂР°Р±РѕС‚РєРё.
+    - `handoff.md` РґР»СЏ РѕС‚СЃР»РµР¶РёРІР°РЅРёСЏ РїСЂРѕРіСЂРµСЃСЃР°.
 
-### Текущий статус:
-Проект находится в состоянии MVP. Основной цикл "Запрос -> Анализ -> Отображение" реализован.
+### РўРµРєСѓС‰РёР№ СЃС‚Р°С‚СѓСЃ:
+РџСЂРѕРµРєС‚ РЅР°С…РѕРґРёС‚СЃСЏ РІ СЃРѕСЃС‚РѕСЏРЅРёРё MVP. РћСЃРЅРѕРІРЅРѕР№ С†РёРєР» "Р—Р°РїСЂРѕСЃ -> РђРЅР°Р»РёР· -> РћС‚РѕР±СЂР°Р¶РµРЅРёРµ" СЂРµР°Р»РёР·РѕРІР°РЅ.
 
-### Следующие шаги:
-1. Реализовать эндпоинт `/api/export/{task_id}` для скачивания Excel.
-2. Добавить валидацию доменов на фронтенде.
-3. Улучшить обработку ошибок API (например, если домен не найден).
+### РЎР»РµРґСѓСЋС‰РёРµ С€Р°РіРё:
+1. Р РµР°Р»РёР·РѕРІР°С‚СЊ СЌРЅРґРїРѕРёРЅС‚ `/api/export/{task_id}` РґР»СЏ СЃРєР°С‡РёРІР°РЅРёСЏ Excel.
+2. Р”РѕР±Р°РІРёС‚СЊ РІР°Р»РёРґР°С†РёСЋ РґРѕРјРµРЅРѕРІ РЅР° С„СЂРѕРЅС‚РµРЅРґРµ.
+3. РЈР»СѓС‡С€РёС‚СЊ РѕР±СЂР°Р±РѕС‚РєСѓ РѕС€РёР±РѕРє API (РЅР°РїСЂРёРјРµСЂ, РµСЃР»Рё РґРѕРјРµРЅ РЅРµ РЅР°Р№РґРµРЅ).
 
 ## [2026-04-21] - Stabilization pass after initial QA
 
@@ -231,3 +231,116 @@
   - Fixed duplicate table render and kept a single table output.
   - Table now receives filtered competitors list (`visibleCompetitors`) so competitors with no positions in shown rows are hidden.
 - Validation: frontend build passed.
+
+## [2026-04-21] - Performance optimization pass
+- Goal: reduce long "processing" waits (actual bottleneck mostly API collection, not Pandas).
+- Changes:
+  - `backend/main.py`: competitor collection switched to limited parallel mode (`Semaphore(2)`) instead of fully sequential.
+  - `backend/services/keys_so.py`:
+    - `_get_with_report_wait` now retries on `429` with backoff.
+    - increased attempts to improve stability under rate limits.
+  - `backend/services/analyzer.py`: replaced repeated `merge` chain with index `join` strategy for faster DataFrame assembly.
+- Validation:
+  - analyze request completes successfully (`200`) after changes.
+
+## [2026-04-21] - Parsing depth presets added
+- Added quick presets in UI (`frontend/src/App.tsx`):
+  - `Р‘С‹СЃС‚СЂС‹Р№`
+  - `Р‘Р°Р»Р°РЅСЃ`
+  - `Р“Р»СѓР±РѕРєРёР№`
+- Presets instantly apply full parsing-depth settings to the form.
+- Default active preset: `Р‘Р°Р»Р°РЅСЃ`.
+- Validation: frontend build passed.
+
+## [2026-04-21] - Diagnostics block in UX
+- Added per-stage diagnostics to analyze flow.
+- Backend:
+  - `backend/services/analyzer.py`: now returns `(DataFrame, diagnostics)` with stage counters:
+    - `main_keywords_raw`
+    - `main_keywords_unique`
+    - `after_join`
+    - `after_main_position_filter`
+    - `after_competitor_filter`
+    - `final_output`
+  - `backend/main.py`: includes `diagnostics` in `/api/analyze` response.
+  - `backend/schemas.py`: `AnalyzeResponse` updated with `diagnostics` field.
+- Frontend:
+  - `frontend/src/App.tsx`: added UX card "Р”РёР°РіРЅРѕСЃС‚РёРєР° СЌС‚Р°РїРѕРІ" showing counters for each filtering stage.
+- Validation:
+  - backend syntax ok
+  - frontend build ok
+  - live `/api/analyze` response contains `diagnostics`
+
+## [2026-04-21] - Tooltips for diagnostics fields
+- Added detailed hover explanations to each metric in "Р”РёР°РіРЅРѕСЃС‚РёРєР° СЌС‚Р°РїРѕРІ" block (`frontend/src/App.tsx`).
+- Reused existing `FieldLabel` tooltip pattern for consistency.
+- Validation: frontend build passed.
+
+## [2026-04-21] - Expandable stage results in UX
+- Added per-stage result datasets to API response:
+  - `stage_results.main_keywords_unique`
+  - `stage_results.after_join`
+  - `stage_results.after_main_position_filter`
+  - `stage_results.after_competitor_filter`
+  - `stage_results.final_output`
+- Backend updates:
+  - `backend/services/analyzer.py`: returns stage preview rows (up to 50 rows per stage).
+  - `backend/main.py`: includes `stage_results` in `/api/analyze` response.
+  - `backend/schemas.py`: `AnalyzeResponse` extended with `stage_results`.
+- Frontend updates:
+  - `frontend/src/App.tsx`: added accordion-style block "Р РµР·СѓР»СЊС‚Р°С‚С‹ РїРѕ СЃС‚Р°РґРёСЏРј".
+  - Clicking a stage expands/collapses and shows tabular rows for that stage.
+- Validation:
+  - backend syntax ok
+  - frontend build ok
+  - live `/api/analyze` returns `stage_results` with expected keys.
+
+## [2026-04-21] - Added stage block: "РЎС‹СЂС‹Рµ РєР»СЋС‡Рё СЃР°Р№С‚Р°"
+- Backend `stage_results` now includes `main_keywords_raw` (first 50 raw Keys.so rows before deduplication).
+- Frontend accordion "Р РµР·СѓР»СЊС‚Р°С‚С‹ РїРѕ СЃС‚Р°РґРёСЏРј" now includes stage "РЎС‹СЂС‹Рµ РєР»СЋС‡Рё СЃР°Р№С‚Р°".
+- Validation:
+  - backend returns `stage_results.main_keywords_raw`
+  - frontend build passed
+
+## [2026-04-21] - Stage preview limit fix
+- Removed hardcoded `50` rows cap for stage previews.
+- `stage_results` preview size is now driven by `result_limit` with a safety cap (`min(result_limit, 3000)`).
+- Verified with `result_limit=3000`: `main_keywords_raw` stage now returns 1000 rows (equal to collected raw count), not 50.
+
+## [2026-04-21] - Fixed duplicate raw rows due to pagination param
+- Investigated Keys.so docs and found endpoint-level pagination uses `page` (not `current_page`) for organic reports.
+- Updated `backend/services/keys_so.py` in paginated fetch to send `page`.
+- Result: raw stage no longer repeats identical first-page data across pages.
+- Validation sample (`main_max_pages=5`): `raw_len=500`, `unique_raw_rows=500`, `max_duplicate_times=1`.
+
+## [2026-04-21] - Top horizontal scrollbar in position table
+- Added an extra horizontal scrollbar above `РўР°Р±Р»РёС†Р° СЃСЂР°РІРЅРµРЅРёСЏ РїРѕР·РёС†РёР№`.
+- Implemented synchronized scrolling between top and bottom scroll areas in `frontend/src/components/ResultTable.tsx`.
+- Validation: frontend build passed.
+
+## [2026-04-21] - Click sorting for all columns in result table
+- Implemented client-side sorting in `frontend/src/components/ResultTable.tsx`.
+- Added clickable headers with asc/desc toggle indicators for:
+  - `Keyword`
+  - `[!Wordstat]`
+  - `Top-10 competitors`
+  - each domain position column
+- Sorting behavior:
+  - text sort for `Keyword`
+  - numeric sort for metrics and positions
+- Validation: frontend build passed.
+
+## [2026-04-21] - Removed "Max site position" setting
+- Removed `Макс. позиция сайта` from UI controls and presets in `frontend/src/App.tsx`.
+- Request payload no longer sends `main_max_pos`.
+- Backend request schema `backend/schemas.py` no longer includes `main_max_pos`.
+- Main-domain collection now requests pages without upper position filter (`max_pos=None`) in `backend/main.py` and `backend/services/keys_so.py`.
+- Analyzer filter now keeps only `site_position > main_min_pos` (upper bound removed) in `backend/services/analyzer.py`.
+- Updated diagnostics tooltip text to reflect min-only filtering.
+
+## [2026-04-21] - Competitors ordered by found keys in final table
+- Updated competitor column ordering in `frontend/src/App.tsx`.
+- In final table, competitors are now sorted by number of found keywords in current output rows (descending, left to right).
+- Competitors with zero found rows are still excluded.
+- Tie-breaker: alphabetical by domain.
+- Validation: `npx tsc --noEmit` passed.

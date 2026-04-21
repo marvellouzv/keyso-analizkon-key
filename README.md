@@ -62,3 +62,12 @@ The analyze form now has configurable depth controls (defaults match previous be
 - result row limit
 
 These settings are sent to backend and applied during Keys.so collection and final filtering.
+
+## Diagnostics UX (2026-04-21)
+The results screen now includes a "Диагностика этапов" block with row counts at each processing step:
+- raw main keywords
+- unique main keywords
+- after join with competitors
+- after main-site position filter
+- after competitor filter
+- final output rows
