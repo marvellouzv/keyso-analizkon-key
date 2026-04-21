@@ -68,7 +68,7 @@ class SEOAnalyzer:
         main_min_pos: int = 10,
         result_limit: int = 500,
         stage_preview_limit: int = 500,
-    ) -> tuple[pd.DataFrame, Dict[str, int], Dict[str, List[Dict]]]:
+    ) -> tuple[pd.DataFrame, Dict[str, int], Dict[str, List[Dict]], List[Dict]]:
         if not main_keywords:
             return (
                 pd.DataFrame(columns=["word", "[!Wordstat]", "competitors_top10_count", main_domain]),
@@ -88,6 +88,7 @@ class SEOAnalyzer:
                     "after_competitor_filter": [],
                     "final_output": [],
                 },
+                [],
             )
 
         df_main = SEOAnalyzer._domain_positions_df(main_keywords, main_domain)
@@ -111,6 +112,12 @@ class SEOAnalyzer:
         stage_main_unique = SEOAnalyzer._stage_preview(df_main, stage_preview_limit)
         stage_after_join = SEOAnalyzer._stage_preview(final_df, stage_preview_limit)
 
+        wordstat = SEOAnalyzer._wordstat_map(main_keywords, competitors_data)
+        final_df["[!Wordstat]"] = final_df["word"].map(wordstat).fillna(0).astype(int)
+
+        pool_columns = ["word", "[!Wordstat]", main_domain, *competitor_columns]
+        table_pool_data = final_df[pool_columns].to_dict(orient="records")
+
         # Keep only rows where the analyzed site rank is below the selected threshold.
         final_df = final_df[final_df[main_domain] > main_min_pos]
         after_main_position_filter = len(final_df)
@@ -128,9 +135,6 @@ class SEOAnalyzer:
             final_df = final_df[final_df["competitors_top10_count"] > 0]
         after_competitor_filter = len(final_df)
         stage_after_comp_filter = SEOAnalyzer._stage_preview(final_df, stage_preview_limit)
-
-        wordstat = SEOAnalyzer._wordstat_map(main_keywords, competitors_data)
-        final_df["[!Wordstat]"] = final_df["word"].map(wordstat).fillna(0).astype(int)
 
         # Weighted ranking:
         # - Wordstat is the main signal (demand potential).
@@ -170,7 +174,7 @@ class SEOAnalyzer:
             "after_competitor_filter": stage_after_comp_filter,
             "final_output": stage_final_output,
         }
-        return final_df, diagnostics, stage_results
+        return final_df, diagnostics, stage_results, table_pool_data
 
     @staticmethod
     def save_to_excel(df: pd.DataFrame, filename: str) -> str:

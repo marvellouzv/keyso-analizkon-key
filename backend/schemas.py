@@ -19,5 +19,6 @@ class AnalyzeResponse(BaseModel):
     domain: str
     competitors: List[str]
     table_data: List[Dict]
+    table_pool_data: List[Dict]
     diagnostics: Dict[str, int]
     stage_results: Dict[str, List[Dict]]

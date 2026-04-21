@@ -375,3 +375,65 @@
   - `main_max_pages` max reverted to 30
   - `competitors_max_pages` max reverted to 20
 - Validation: `npx tsc --noEmit` passed, Python syntax check passed.
+## [2026-04-21] - Local table filters without API requests
+- Added local UX filters before final position table in `frontend/src/App.tsx`:
+  - `Топ позиций конкурентов`
+  - `Мин. позиция сайта`
+- Filters are applied to already loaded `table_data` on the client side (no extra API calls).
+- Filtered rows are used for:
+  - table content
+  - visible competitors list/order in table columns
+  - summary counter `Проанализировано фраз`
+- On each new analysis run, table filters initialize from run settings (`competitorsTopPos`, `mainMinPos`).
+- Validation: `npx tsc --noEmit` passed.
+## [2026-04-21] - Fixed local table filters with true recalculation
+- Root cause: table filters were applied to already pre-filtered `table_data`, so changes often had no visible effect.
+- Backend:
+  - `backend/services/analyzer.py`: now returns `table_pool_data` (rows before main/competitor position filters) with `[!Wordstat]` and positions.
+  - `backend/main.py`: includes `table_pool_data` in `/api/analyze` response.
+  - `backend/schemas.py`: `AnalyzeResponse` extended with `table_pool_data`.
+- Frontend (`frontend/src/App.tsx`):
+  - Local filters now recalculate from `table_pool_data` (fallback to `table_data` if needed).
+  - On each filter change:
+    - re-filter rows by `Мин. позиция сайта` and `Топ позиций конкурентов`
+    - recompute `competitors_top10_count`
+    - recompute `opportunity_score`
+    - re-sort by score/count/wordstat/word
+    - apply saved `result_limit` from the run
+    - rebuild visible competitor columns and row count.
+- Validation: Python syntax checks passed; `npx tsc --noEmit` passed.
+## [2026-04-21] - Fixed local filter behavior and min-site options
+- UI: removed `> 50` option from both `Мин. позиция сайта` selectors in `frontend/src/App.tsx`:
+  - analysis settings block
+  - local table filter block
+- Backend: fixed data collection scope for local competitor-top filter in `backend/main.py`:
+  - competitor keywords are now fetched up to top 50 (`max_pos=50`) regardless of run filter value.
+  - This allows local `Топ позиций конкурентов` filter to truly recalculate/rebuild table for 10/20/30/50 without extra API calls.
+- Validation: `npx tsc --noEmit` passed; Python syntax check passed.
+## [2026-04-21] - Verified competitor-top local filter dependency and added UX warning
+- Checked full data path:
+  - backend now fetches competitors up to top 50 (`backend/main.py`, `max_pos=50`)
+  - API returns `table_pool_data`
+  - frontend local recalculation uses `table_pool_data` first, fallback to `table_data`
+- Added UX warning in `frontend/src/App.tsx` near local `Топ позиций конкурентов` filter:
+  - if `table_pool_data` is missing, show that filter works in limited mode and requires a new run on updated backend.
+- Validation: `npx tsc --noEmit` passed.
+## [2026-04-21] - Added >40 option for min site position
+- Updated `Мин. позиция сайта` options in `frontend/src/App.tsx` to include `> 40` in both places:
+  - analysis settings block
+  - local filter block above final table
+- Validation: `npx tsc --noEmit` passed.
+## [2026-04-21] - Presets updated and default switched to Fast
+- Updated preset values in `frontend/src/App.tsx`:
+  - `Быстрый`: competitors=10, site pages=10, competitor pages=10, result limit=500
+  - `Баланс`: competitors=15, site pages=20, competitor pages=15, result limit=1000
+  - `Глубокий`: competitors=20, site pages=30, competitor pages=20, result limit=2000
+- Set default active preset to `Быстрый`.
+- Synced initial form settings with `Быстрый` values.
+- Validation: `npx tsc --noEmit` passed.
+## [2026-04-21] - Reordered analysis form fields
+- In startup form (`frontend/src/App.tsx`), moved these fields to the end of settings list:
+  - `Топ позиций конкурентов`
+  - `Мин. позиция сайта`
+- They now appear after `Макс. строк в таблице`.
+- Validation: `npx tsc --noEmit` passed.

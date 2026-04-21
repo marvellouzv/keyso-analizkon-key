@@ -46,6 +46,7 @@ type AnalyzeResponse = {
   domain: string;
   competitors: string[];
   table_data: Array<Record<string, number | string>>;
+  table_pool_data: Array<Record<string, number | string>>;
   diagnostics: {
     main_keywords_raw: number;
     main_keywords_unique: number;
@@ -74,8 +75,8 @@ const PRESET_OPTIONS: Array<{ id: string; label: string; settings: ParseSettings
       competitorsLimit: 10,
       competitorsTopPos: 10,
       mainMinPos: 10,
-      mainMaxPages: 5,
-      competitorsMaxPages: 3,
+      mainMaxPages: 10,
+      competitorsMaxPages: 10,
       resultLimit: 500,
     },
   },
@@ -83,24 +84,24 @@ const PRESET_OPTIONS: Array<{ id: string; label: string; settings: ParseSettings
     id: "balanced",
     label: "Баланс",
     settings: {
-      competitorsLimit: 10,
+      competitorsLimit: 15,
       competitorsTopPos: 10,
       mainMinPos: 10,
-      mainMaxPages: 10,
-      competitorsMaxPages: 5,
-      resultLimit: 500,
+      mainMaxPages: 20,
+      competitorsMaxPages: 15,
+      resultLimit: 1000,
     },
   },
   {
     id: "deep",
     label: "Глубокий",
     settings: {
-      competitorsLimit: 15,
+      competitorsLimit: 20,
       competitorsTopPos: 20,
       mainMinPos: 10,
-      mainMaxPages: 15,
-      competitorsMaxPages: 10,
-      resultLimit: 1000,
+      mainMaxPages: 30,
+      competitorsMaxPages: 20,
+      resultLimit: 2000,
     },
   },
 ];
@@ -167,11 +168,14 @@ function AnalyzerApp() {
     competitorsTopPos: 10,
     mainMinPos: 10,
     mainMaxPages: 10,
-    competitorsMaxPages: 5,
+    competitorsMaxPages: 10,
     resultLimit: 500,
   });
-  const [activePreset, setActivePreset] = React.useState<string>("balanced");
+  const [activePreset, setActivePreset] = React.useState<string>("fast");
   const [openedStage, setOpenedStage] = React.useState<string | null>(null);
+  const [tableCompetitorsTopPos, setTableCompetitorsTopPos] = React.useState<number>(10);
+  const [tableMainMinPos, setTableMainMinPos] = React.useState<number>(10);
+  const [tableResultLimit, setTableResultLimit] = React.useState<number>(500);
 
   const normalizedDomain = domain.trim().toLowerCase();
   const isDomainValid = DOMAIN_PATTERN.test(normalizedDomain);
@@ -185,6 +189,9 @@ function AnalyzerApp() {
     mutationFn: async () => {
       setStatusLogs([]);
       addLog(`Запуск анализа для ${normalizedDomain}...`);
+      setTableCompetitorsTopPos(settings.competitorsTopPos);
+      setTableMainMinPos(settings.mainMinPos);
+      setTableResultLimit(settings.resultLimit);
 
       const res = await axios.post("/api/analyze", {
         domain: normalizedDomain,
@@ -251,13 +258,76 @@ function AnalyzerApp() {
     });
   }, [mutation.data]);
 
+  const tableFilteredData = React.useMemo(() => {
+    if (!mutation.data) {
+      return [];
+    }
+
+    const analyzedDomain = mutation.data.domain;
+    const allCompetitors = mutation.data.competitors;
+    const sourceRows =
+      mutation.data.table_pool_data && mutation.data.table_pool_data.length > 0
+        ? mutation.data.table_pool_data
+        : mutation.data.table_data;
+
+    const prepared: Array<Record<string, number | string>> = sourceRows
+      .filter((row) => {
+        const mainPos = Number(row[analyzedDomain] ?? 101);
+        if (!Number.isFinite(mainPos) || mainPos <= tableMainMinPos) {
+          return false;
+        }
+
+        return allCompetitors.some((competitor) => {
+          const compPos = Number(row[competitor] ?? 101);
+          return Number.isFinite(compPos) && compPos <= tableCompetitorsTopPos;
+        });
+      })
+      .map((row) => {
+        const competitorsTopCount = allCompetitors.reduce((acc, competitor) => {
+          const compPos = Number(row[competitor] ?? 101);
+          return acc + (Number.isFinite(compPos) && compPos <= tableCompetitorsTopPos ? 1 : 0);
+        }, 0);
+
+        const wordstat = Number(row["[!Wordstat]"] ?? 0);
+        const opportunityScore = Number((wordstat * (1 + competitorsTopCount * 0.6)).toFixed(2));
+
+        return {
+          ...row,
+          "[!Wordstat]": wordstat,
+          competitors_top10_count: competitorsTopCount,
+          opportunity_score: opportunityScore,
+        };
+      })
+      .sort((a: Record<string, number | string>, b: Record<string, number | string>) => {
+        const scoreDiff = Number(b.opportunity_score ?? 0) - Number(a.opportunity_score ?? 0);
+        if (scoreDiff !== 0) {
+          return scoreDiff;
+        }
+        const countDiff = Number(b.competitors_top10_count ?? 0) - Number(a.competitors_top10_count ?? 0);
+        if (countDiff !== 0) {
+          return countDiff;
+        }
+        const wsDiff = Number(b["[!Wordstat]"] ?? 0) - Number(a["[!Wordstat]"] ?? 0);
+        if (wsDiff !== 0) {
+          return wsDiff;
+        }
+        return String(a.word ?? "").localeCompare(String(b.word ?? ""), "ru");
+      });
+
+    return prepared.slice(0, tableResultLimit);
+  }, [mutation.data, tableCompetitorsTopPos, tableMainMinPos, tableResultLimit]);
+
+  const hasTablePoolData = React.useMemo(() => {
+    return Boolean(mutation.data?.table_pool_data && mutation.data.table_pool_data.length > 0);
+  }, [mutation.data]);
+
   const visibleCompetitors = React.useMemo(() => {
     if (!mutation.data) {
       return [];
     }
     const competitorStats = mutation.data.competitors
       .map((competitor) => {
-        const foundCount = mutation.data!.table_data.reduce((acc, row) => {
+        const foundCount = tableFilteredData.reduce((acc, row) => {
           const pos = Number(row[competitor] ?? 101);
           return acc + (Number.isFinite(pos) && pos < 101 ? 1 : 0);
         }, 0);
@@ -272,7 +342,7 @@ function AnalyzerApp() {
       });
 
     return competitorStats.map((item) => item.competitor);
-  }, [mutation.data]);
+  }, [mutation.data, tableFilteredData]);
 
   const stageOrder = [
     "main_keywords_raw",
@@ -387,36 +457,6 @@ function AnalyzerApp() {
               </label>
 
               <label className="text-sm text-slate-700">
-                <FieldLabel text="Топ позиций конкурентов" hint="Учитываются позиции конкурентов от 1 до выбранного значения." />
-                <select
-                  className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
-                  value={settings.competitorsTopPos}
-                  onChange={(e) => setSettings((s) => ({ ...s, competitorsTopPos: Number(e.target.value) }))}
-                >
-                  {[10, 20, 30, 50].map((v) => (
-                    <option key={v} value={v}>
-                      1-{v}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="text-sm text-slate-700">
-                <FieldLabel text="Мин. позиция сайта" hint="Оставляем запросы, где позиция исследуемого сайта строго больше этого порога." />
-                <select
-                  className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
-                  value={settings.mainMinPos}
-                  onChange={(e) => setSettings((s) => ({ ...s, mainMinPos: Number(e.target.value) }))}
-                >
-                  {[10, 20, 30, 50].map((v) => (
-                    <option key={v} value={v}>
-                      {">"} {v}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="text-sm text-slate-700">
                 <FieldLabel text="Страниц для сайта" hint="Сколько страниц ключей собрать для исследуемого сайта." />
                 <select
                   className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
@@ -456,6 +496,36 @@ function AnalyzerApp() {
                   {[500, 1000, 2000, 5000].map((v) => (
                     <option key={v} value={v}>
                       {v}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-sm text-slate-700">
+                <FieldLabel text="Топ позиций конкурентов" hint="Учитываются позиции конкурентов от 1 до выбранного значения." />
+                <select
+                  className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                  value={settings.competitorsTopPos}
+                  onChange={(e) => setSettings((s) => ({ ...s, competitorsTopPos: Number(e.target.value) }))}
+                >
+                  {[10, 20, 30, 50].map((v) => (
+                    <option key={v} value={v}>
+                      1-{v}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-sm text-slate-700">
+                <FieldLabel text="Мин. позиция сайта" hint="Оставляем запросы, где позиция исследуемого сайта строго больше этого порога." />
+                <select
+                  className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                  value={settings.mainMinPos}
+                  onChange={(e) => setSettings((s) => ({ ...s, mainMinPos: Number(e.target.value) }))}
+                >
+                  {[10, 20, 30, 40].map((v) => (
+                    <option key={v} value={v}>
+                      {">"} {v}
                     </option>
                   ))}
                 </select>
@@ -534,7 +604,7 @@ function AnalyzerApp() {
                 <div className="space-y-4">
                   <div className="rounded-lg bg-blue-50 p-4">
                     <p className="text-sm font-medium text-blue-600">Проанализировано фраз</p>
-                    <p className="text-2xl font-bold text-blue-900">{mutation.data.table_data.length}</p>
+                    <p className="text-2xl font-bold text-blue-900">{tableFilteredData.length}</p>
                   </div>
                   <div className="rounded-lg bg-green-50 p-4">
                     <p className="text-sm font-medium text-green-600">Найдено конкурентов</p>
@@ -667,7 +737,49 @@ function AnalyzerApp() {
                   Скачать Excel
                 </button>
               </div>
-              <ResultTable data={mutation.data.table_data} domains={[mutation.data.domain, ...visibleCompetitors]} />
+              <div className="grid grid-cols-1 gap-3 border-b border-slate-100 p-6 md:grid-cols-2">
+                <label className="text-sm text-slate-700">
+                  <FieldLabel
+                    text="Топ позиций конкурентов"
+                    hint="Локальный фильтр таблицы: показываем строки, где хотя бы один конкурент имеет позицию от 1 до выбранного значения."
+                  />
+                  <select
+                    className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                    value={tableCompetitorsTopPos}
+                    onChange={(e) => setTableCompetitorsTopPos(Number(e.target.value))}
+                  >
+                    {[10, 20, 30, 50].map((v) => (
+                      <option key={v} value={v}>
+                        1-{v}
+                      </option>
+                    ))}
+                  </select>
+                  {!hasTablePoolData && (
+                    <p className="mt-1 text-xs text-amber-700">
+                      Фильтр работает в ограниченном режиме: нужен новый запуск анализа на обновленном backend.
+                    </p>
+                  )}
+                </label>
+
+                <label className="text-sm text-slate-700">
+                  <FieldLabel
+                    text="Мин. позиция сайта"
+                    hint="Локальный фильтр таблицы: показываем строки, где позиция сайта строго больше выбранного порога."
+                  />
+                  <select
+                    className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                    value={tableMainMinPos}
+                    onChange={(e) => setTableMainMinPos(Number(e.target.value))}
+                  >
+                    {[10, 20, 30, 40].map((v) => (
+                      <option key={v} value={v}>
+                        {">"} {v}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <ResultTable data={tableFilteredData} domains={[mutation.data.domain, ...visibleCompetitors]} />
             </div>
           </motion.div>
         )}

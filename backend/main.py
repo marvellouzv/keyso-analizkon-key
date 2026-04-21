@@ -75,7 +75,7 @@ async def analyze(
                 data = await keys_client.get_keywords_top_positions(
                     comp,
                     request.base,
-                    max_pos=request.competitors_top_pos,
+                    max_pos=50,
                     per_page=100,
                     max_pages=request.competitors_max_pages,
                 )
@@ -84,7 +84,7 @@ async def analyze(
         comp_pairs = await asyncio.gather(*(fetch_competitor(comp) for comp in competitors))
         comp_results = {comp: data for comp, data in comp_pairs}
 
-        df, diagnostics, stage_results = await SEOAnalyzer.process_data(
+        df, diagnostics, stage_results, table_pool_data = await SEOAnalyzer.process_data(
             request.domain,
             main_keys,
             comp_results,
@@ -109,6 +109,7 @@ async def analyze(
             "domain": request.domain,
             "competitors": competitors,
             "table_data": result_data,
+            "table_pool_data": table_pool_data,
             "diagnostics": diagnostics,
             "stage_results": stage_results,
         }
