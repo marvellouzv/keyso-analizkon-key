@@ -344,3 +344,34 @@
 - Competitors with zero found rows are still excluded.
 - Tie-breaker: alphabetical by domain.
 - Validation: `npx tsc --noEmit` passed.
+## [2026-04-21] - Resizable columns in final table UX
+- Added manual column resize (drag right edge of header) in `frontend/src/components/ResultTable.tsx`.
+- Implemented per-column width state with min-width limits.
+- Works for `Keyword`, `[!Wordstat]`, `Top-10 competitors`, and all competitor domain columns.
+- Preserved existing sorting and dual horizontal scroll synchronization.
+- Validation: `npx tsc --noEmit` passed.
+## [2026-04-21] - Updated selector values for parsing depth
+- Updated UI options in `frontend/src/App.tsx`:
+  - `Количество конкурентов`: 5, 10, 15, 20 (already aligned)
+  - `Страниц для сайта`: 10, 15, 20, 30, 40, 50
+  - `Страниц для конкурентов`: 5, 10, 15, 20, 30
+- Updated backend validation limits in `backend/schemas.py`:
+  - `main_max_pages` max increased to 50
+  - `competitors_max_pages` max increased to 30
+- Validation: `npx tsc --noEmit` passed, Python syntax check passed.
+## [2026-04-21] - Improved API error rendering in status log
+- Fixed `[object Object]` error output in analyzer status logs.
+- Added `extractApiErrorMessage` in `frontend/src/App.tsx` to normalize API errors:
+  - string `detail`
+  - array validation details (FastAPI 422) with `loc: msg`
+  - object details via `message` or JSON fallback
+  - raw response text and Axios message fallback
+- Validation: `npx tsc --noEmit` passed.
+## [2026-04-21] - Rolled back page selector expansions
+- UI rollback in `frontend/src/App.tsx`:
+  - `Страниц для сайта`: removed 40 and 50 (now 10, 15, 20, 30)
+  - `Страниц для конкурентов`: removed 30 (now 5, 10, 15, 20)
+- Backend rollback in `backend/schemas.py`:
+  - `main_max_pages` max reverted to 30
+  - `competitors_max_pages` max reverted to 20
+- Validation: `npx tsc --noEmit` passed, Python syntax check passed.

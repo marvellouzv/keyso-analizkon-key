@@ -23,6 +23,25 @@ export const ResultTable: React.FC<ResultTableProps> = ({ data, domains }) => {
 
   const [sortKey, setSortKey] = React.useState<string>("word");
   const [sortDirection, setSortDirection] = React.useState<SortDirection>("asc");
+  const [colWidths, setColWidths] = React.useState<Record<string, number>>({});
+  const resizingRef = React.useRef<{ key: string; startX: number; startWidth: number } | null>(null);
+
+  const getDefaultWidth = React.useCallback((key: string) => {
+    if (key === "word") return 300;
+    return 140;
+  }, []);
+
+  const getMinWidth = React.useCallback((key: string) => {
+    if (key === "word") return 220;
+    return 110;
+  }, []);
+
+  const getColWidth = React.useCallback(
+    (key: string) => {
+      return colWidths[key] ?? getDefaultWidth(key);
+    },
+    [colWidths, getDefaultWidth],
+  );
 
   React.useEffect(() => {
     const syncWidth = () => {
@@ -32,7 +51,46 @@ export const ResultTable: React.FC<ResultTableProps> = ({ data, domains }) => {
     syncWidth();
     window.addEventListener("resize", syncWidth);
     return () => window.removeEventListener("resize", syncWidth);
-  }, [data, domains]);
+  }, [data, domains, colWidths]);
+
+  React.useEffect(() => {
+    const onMouseMove = (event: MouseEvent) => {
+      const active = resizingRef.current;
+      if (!active) return;
+
+      const minWidth = getMinWidth(active.key);
+      const nextWidth = Math.max(minWidth, active.startWidth + (event.clientX - active.startX));
+      setColWidths((prev) => ({ ...prev, [active.key]: nextWidth }));
+    };
+
+    const onMouseUp = () => {
+      if (!resizingRef.current) return;
+      resizingRef.current = null;
+      document.body.style.removeProperty("cursor");
+      document.body.style.removeProperty("user-select");
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [getMinWidth]);
+
+  const startResize = (event: React.MouseEvent<HTMLDivElement>, key: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    resizingRef.current = {
+      key,
+      startX: event.clientX,
+      startWidth: getColWidth(key),
+    };
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
 
   const syncFromTop = () => {
     if (!topScrollRef.current || !bottomScrollRef.current) return;
@@ -91,6 +149,11 @@ export const ResultTable: React.FC<ResultTableProps> = ({ data, domains }) => {
   const headerBtnClass =
     "inline-flex w-full items-center justify-center gap-1 rounded px-1 py-0.5 text-slate-700 hover:bg-slate-100";
 
+  const columns = React.useMemo(
+    () => ["word", "[!Wordstat]", "competitors_top10_count", ...domains],
+    [domains],
+  );
+
   return (
     <div>
       <div
@@ -103,28 +166,61 @@ export const ResultTable: React.FC<ResultTableProps> = ({ data, domains }) => {
 
       <div ref={bottomScrollRef} onScroll={syncFromBottom} className="overflow-x-auto pb-2">
         <table ref={contentRef} className="w-max min-w-full border-collapse text-left">
+          <colgroup>
+            {columns.map((columnKey) => (
+              <col key={columnKey} style={{ width: `${getColWidth(columnKey)}px` }} />
+            ))}
+          </colgroup>
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50">
-              <th className="sticky left-0 z-10 bg-slate-50 p-4 font-semibold text-slate-700">
+              <th className="relative sticky left-0 z-10 bg-slate-50 p-4 font-semibold text-slate-700">
                 <button type="button" onClick={() => onSort("word")} className={headerBtnClass}>
                   Keyword <span className="text-xs">{sortIndicator("word")}</span>
                 </button>
+                <div
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Resize keyword column"
+                  onMouseDown={(e) => startResize(e, "word")}
+                  className="absolute inset-y-0 right-0 w-2 cursor-col-resize"
+                />
               </th>
-              <th className="min-w-[120px] p-4 text-center font-semibold text-slate-700">
+              <th className="relative p-4 text-center font-semibold text-slate-700">
                 <button type="button" onClick={() => onSort("[!Wordstat]")} className={headerBtnClass}>
                   [!Wordstat] <span className="text-xs">{sortIndicator("[!Wordstat]")}</span>
                 </button>
+                <div
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Resize wordstat column"
+                  onMouseDown={(e) => startResize(e, "[!Wordstat]")}
+                  className="absolute inset-y-0 right-0 w-2 cursor-col-resize"
+                />
               </th>
-              <th className="min-w-[120px] p-4 text-center font-semibold text-slate-700">
+              <th className="relative p-4 text-center font-semibold text-slate-700">
                 <button type="button" onClick={() => onSort("competitors_top10_count")} className={headerBtnClass}>
                   Top-10 competitors <span className="text-xs">{sortIndicator("competitors_top10_count")}</span>
                 </button>
+                <div
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Resize competitors count column"
+                  onMouseDown={(e) => startResize(e, "competitors_top10_count")}
+                  className="absolute inset-y-0 right-0 w-2 cursor-col-resize"
+                />
               </th>
               {domains.map((d) => (
-                <th key={d} className="min-w-[120px] p-4 text-center font-semibold text-slate-700">
+                <th key={d} className="relative p-4 text-center font-semibold text-slate-700">
                   <button type="button" onClick={() => onSort(d)} className={headerBtnClass}>
                     {d.length > 15 ? `${d.substring(0, 12)}...` : d} <span className="text-xs">{sortIndicator(d)}</span>
                   </button>
+                  <div
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label={`Resize ${d} column`}
+                    onMouseDown={(e) => startResize(e, d)}
+                    className="absolute inset-y-0 right-0 w-2 cursor-col-resize"
+                  />
                 </th>
               ))}
             </tr>

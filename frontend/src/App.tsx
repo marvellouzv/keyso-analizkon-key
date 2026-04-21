@@ -119,6 +119,46 @@ function FieldLabel({ text, hint }: { text: string; hint: string }) {
   );
 }
 
+function extractApiErrorMessage(err: any): string {
+  const detail = err?.response?.data?.detail;
+
+  if (typeof detail === "string" && detail.trim()) {
+    return detail;
+  }
+
+  if (Array.isArray(detail) && detail.length > 0) {
+    const parts = detail.map((item) => {
+      if (item && typeof item === "object") {
+        const loc = Array.isArray(item.loc) ? item.loc.join(".") : "";
+        const msg = typeof item.msg === "string" ? item.msg : "";
+        if (loc && msg) {
+          return `${loc}: ${msg}`;
+        }
+      }
+      return JSON.stringify(item);
+    });
+    return parts.join("; ");
+  }
+
+  if (detail && typeof detail === "object") {
+    if (typeof detail.message === "string" && detail.message.trim()) {
+      return detail.message;
+    }
+    return JSON.stringify(detail);
+  }
+
+  const rawData = err?.response?.data;
+  if (typeof rawData === "string" && rawData.trim()) {
+    return rawData;
+  }
+
+  if (typeof err?.message === "string" && err.message.trim()) {
+    return err.message;
+  }
+
+  return "Неизвестная ошибка";
+}
+
 function AnalyzerApp() {
   const { domain, region, setDomain, setRegion } = useStore();
   const [statusLogs, setStatusLogs] = React.useState<string[]>([]);
@@ -161,7 +201,7 @@ function AnalyzerApp() {
       return res.data;
     },
     onError: (err: any) => {
-      const errorMsg = err?.response?.data?.detail || err?.message || "Неизвестная ошибка";
+      const errorMsg = extractApiErrorMessage(err);
       addLog(`ОШИБКА: ${errorMsg}`);
     },
   });
