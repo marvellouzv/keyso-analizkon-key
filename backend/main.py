@@ -194,6 +194,7 @@ async def export_analysis(analysis_id: int, db: Session = Depends(database.get_d
         columns={
             "word": "Запросы",
             "[!Wordstat]": "Частотность",
+            "частотность": "Частотность",
             "competitors_top10_count": "Конкурентов в ТОП",
             "opportunity_score": "Приоритет",
         }

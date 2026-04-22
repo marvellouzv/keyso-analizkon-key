@@ -66,6 +66,8 @@ type ParseSettings = {
   top50CompetitorsMin: number;
 };
 
+type VisualThemeId = "clean" | "executive" | "dense";
+
 const PRESET_OPTIONS: Array<{ id: string; label: string; settings: ParseSettings }> = [
   {
     id: "fast",
@@ -99,6 +101,24 @@ const PRESET_OPTIONS: Array<{ id: string; label: string; settings: ParseSettings
       resultLimit: 2000,
       top50CompetitorsMin: 3,
     },
+  },
+];
+
+const VISUAL_THEME_OPTIONS: Array<{ id: VisualThemeId; label: string; description: string }> = [
+  {
+    id: "clean",
+    label: "Чистый Analytics",
+    description: "Безопасный деловой стиль",
+  },
+  {
+    id: "executive",
+    label: "Analytics + Executive",
+    description: "Премиальные акценты и контраст",
+  },
+  {
+    id: "dense",
+    label: "Analytics + Data-Dense",
+    description: "Плотный режим для больших таблиц",
   },
 ];
 
@@ -197,6 +217,9 @@ function AnalyzerApp() {
   const [tableResultLimit, setTableResultLimit] = React.useState<number>(500);
   const [tableTop50CompetitorsMin, setTableTop50CompetitorsMin] = React.useState<number>(3);
   const [manualCompetitorsInput, setManualCompetitorsInput] = React.useState<string>("");
+  const [visualTheme, setVisualTheme] = React.useState<VisualThemeId>("clean");
+  const [copySuccessVisible, setCopySuccessVisible] = React.useState<boolean>(false);
+  const copySuccessTimeoutRef = React.useRef<number | null>(null);
   const manualCompetitors = React.useMemo(
     () => parseManualCompetitorsInput(manualCompetitorsInput),
     [manualCompetitorsInput],
@@ -214,6 +237,11 @@ function AnalyzerApp() {
   const mutation = useMutation<AnalyzeResponse>({
     mutationFn: async () => {
       setStatusLogs([]);
+      setCopySuccessVisible(false);
+      if (copySuccessTimeoutRef.current) {
+        window.clearTimeout(copySuccessTimeoutRef.current);
+        copySuccessTimeoutRef.current = null;
+      }
       addLog(`Запуск анализа для ${normalizedDomain}...`);
       setTableCompetitorsTopPos(10);
       setTableMainMinPos(10);
@@ -251,8 +279,13 @@ function AnalyzerApp() {
       "Собираем данные конкурентов с учетом лимитов API...",
       "Нормализуем позиции и удаляем дубли...",
       "Объединяем фразы сайта и конкурентов...",
-      "Считаем [!Wordstat] и метрики конкуренции...",
-      "Формируем итоговую таблицу и сортируем результаты...",
+      "Считаем [!Wordstat] для ключевых фраз...",
+      "Рассчитываем метрики конкуренции и приоритет...",
+      "Формируем пул строк для локальной фильтрации таблицы...",
+      "Применяем фильтр позиций исследуемого сайта...",
+      "Применяем фильтр топа конкурентов...",
+      "Сортируем итоговые строки по приоритету...",
+      "Ограничиваем результат по лимиту строк...",
     ];
 
     let i = 0;
@@ -423,8 +456,12 @@ function AnalyzerApp() {
       if (column === "word") {
         return String(raw ?? "");
       }
-      if (column === "[!Wordstat]" || column === "competitors_top10_count" || column === "opportunity_score") {
+      if (column === "[!Wordstat]" || column === "competitors_top10_count") {
         return String(raw ?? "");
+      }
+      if (column === "opportunity_score") {
+        const value = Number(raw ?? 0);
+        return String(Number.isFinite(value) ? Math.round(value) : 0);
       }
       const pos = Number(raw ?? 101);
       return !Number.isFinite(pos) || pos > 100 ? "-" : String(pos);
@@ -434,13 +471,70 @@ function AnalyzerApp() {
     const bodyRows = tableFilteredData.map((row) => columns.map((column) => formatCell(column, row)).join("\t"));
     const tsv = [headerRow, ...bodyRows].join("\n");
 
+    const fallbackCopy = (text: string): boolean => {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      textarea.style.pointerEvents = "none";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      let copied = false;
+      try {
+        copied = document.execCommand("copy");
+      } catch {
+        copied = false;
+      }
+      document.body.removeChild(textarea);
+      return copied;
+    };
+
     try {
-      await navigator.clipboard.writeText(tsv);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(tsv);
+      } else {
+        const copied = fallbackCopy(tsv);
+        if (!copied) {
+          throw new Error("Clipboard API is unavailable");
+        }
+      }
       addLog("Таблица скопирована в буфер обмена.");
+      setCopySuccessVisible(true);
+      if (copySuccessTimeoutRef.current) {
+        window.clearTimeout(copySuccessTimeoutRef.current);
+      }
+      copySuccessTimeoutRef.current = window.setTimeout(() => {
+        setCopySuccessVisible(false);
+        copySuccessTimeoutRef.current = null;
+      }, 3000);
     } catch {
-      addLog("ОШИБКА: Не удалось скопировать таблицу в буфер обмена.");
+      const copied = fallbackCopy(tsv);
+      if (copied) {
+        addLog("Таблица скопирована в буфер обмена.");
+        setCopySuccessVisible(true);
+        if (copySuccessTimeoutRef.current) {
+          window.clearTimeout(copySuccessTimeoutRef.current);
+        }
+        copySuccessTimeoutRef.current = window.setTimeout(() => {
+          setCopySuccessVisible(false);
+          copySuccessTimeoutRef.current = null;
+        }, 3000);
+      } else {
+        addLog("ОШИБКА: Не удалось скопировать таблицу в буфер обмена.");
+        setCopySuccessVisible(false);
+      }
     }
   }, [addLog, mutation.data, tableFilteredData, visibleCompetitors]);
+
+  React.useEffect(() => {
+    return () => {
+      if (copySuccessTimeoutRef.current) {
+        window.clearTimeout(copySuccessTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const stageOrder = [
     "main_keywords_raw",
@@ -465,20 +559,45 @@ function AnalyzerApp() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-8">
+    <div className={`theme-shell theme-${visualTheme} min-h-screen bg-slate-50 p-4 md:p-8`}>
       <div className="mx-auto max-w-6xl">
         <header className="mb-10">
-          <h1 className="mb-2 text-4xl font-extrabold text-slate-900">SEO Keys.so Analyzer</h1>
-          <p className="text-slate-500">Анализ видимости домена и сравнение с конкурентами</p>
+          <h1 className="app-title mb-2 text-4xl font-extrabold text-slate-900">SEO Keys.so Analyzer</h1>
+          <p className="app-subtitle text-slate-500">Анализ видимости домена и сравнение с конкурентами</p>
         </header>
 
-        <div className="mb-6 flex flex-wrap gap-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="app-card mb-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-4">
+            <div>
+              <p className="app-subtitle text-sm font-medium text-slate-600">Визуальный стиль интерфейса</p>
+              <p className="app-subtitle text-xs text-slate-500">Можно переключать в любой момент, без пересчета данных</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {VISUAL_THEME_OPTIONS.map((theme) => (
+                <button
+                  key={theme.id}
+                  type="button"
+                  onClick={() => setVisualTheme(theme.id)}
+                  className={`app-theme-chip rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+                    visualTheme === theme.id
+                      ? "app-theme-chip-active border-blue-600 bg-blue-600 text-white"
+                      : "app-theme-chip-idle border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                  }`}
+                  title={theme.description}
+                >
+                  {theme.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-4">
           <div className="min-w-[240px] flex-1">
             <label className="mb-1 block text-sm font-medium text-slate-700">
               <FieldLabel text="Домен" hint="Можно вставлять домен или URL, например: https://www.example.com/." />
             </label>
             <input
-              className="w-full rounded-md border border-slate-300 p-2 outline-none transition-all focus:ring-2 focus:ring-blue-500"
+              className="app-input w-full rounded-md border border-slate-300 p-2 outline-none transition-all focus:ring-2 focus:ring-blue-500"
               placeholder="https://www.example.com/"
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
@@ -496,7 +615,7 @@ function AnalyzerApp() {
             <select
               value={region}
               onChange={(e) => setRegion(e.target.value)}
-              className="w-full rounded-md border border-slate-300 bg-white p-2 outline-none focus:ring-2 focus:ring-blue-500"
+              className="app-select w-full rounded-md border border-slate-300 bg-white p-2 outline-none focus:ring-2 focus:ring-blue-500"
             >
               <optgroup label="Яндекс">
                 {BASE_OPTIONS.Yandex.map((opt) => (
@@ -522,7 +641,7 @@ function AnalyzerApp() {
             </select>
           </div>
 
-          <div className="w-full rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="app-card-soft app-density-pad w-full rounded-lg border border-slate-200 bg-slate-50 p-3">
             <p className="mb-3 text-sm font-semibold text-slate-700">Глубина парсинга</p>
             <div className="mb-3 flex flex-wrap gap-2">
               {PRESET_OPTIONS.map((preset) => (
@@ -533,10 +652,10 @@ function AnalyzerApp() {
                     setSettings(preset.settings);
                     setActivePreset(preset.id);
                   }}
-                  className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+                  className={`app-preset-chip rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
                     activePreset === preset.id
-                      ? "border-blue-600 bg-blue-600 text-white"
-                      : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                      ? "app-preset-chip-active border-blue-600 bg-blue-600 text-white"
+                      : "app-preset-chip-idle border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
                   }`}
                 >
                   {preset.label}
@@ -547,7 +666,7 @@ function AnalyzerApp() {
               <label className="text-sm text-slate-700">
                 <FieldLabel text="Глубина для сайта" hint="Сколько страниц ключей собрать для исследуемого сайта." />
                 <select
-                  className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                  className="app-select mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
                   value={settings.mainMaxPages}
                   onChange={(e) => setSettings((s) => ({ ...s, mainMaxPages: Number(e.target.value) }))}
                 >
@@ -562,7 +681,7 @@ function AnalyzerApp() {
               <label className="text-sm text-slate-700">
                 <FieldLabel text="Количество конкурентов" hint="Сколько конкурентов запрашивать у Keys.so." />
                 <select
-                  className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                  className="app-select mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
                   value={settings.competitorsLimit}
                   onChange={(e) => setSettings((s) => ({ ...s, competitorsLimit: Number(e.target.value) }))}
                 >
@@ -577,7 +696,7 @@ function AnalyzerApp() {
               <label className="text-sm text-slate-700">
                 <FieldLabel text="Глубина для конкурентов" hint="Сколько страниц ключей собрать для каждого конкурента." />
                 <select
-                  className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                  className="app-select mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
                   value={settings.competitorsMaxPages}
                   onChange={(e) => setSettings((s) => ({ ...s, competitorsMaxPages: Number(e.target.value) }))}
                 >
@@ -592,7 +711,7 @@ function AnalyzerApp() {
               <label className="text-sm text-slate-700">
                 <FieldLabel text="Макс. строк в таблице" hint="Ограничение на итоговое количество строк в результатах." />
                 <select
-                  className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                  className="app-select mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
                   value={settings.resultLimit}
                   onChange={(e) => setSettings((s) => ({ ...s, resultLimit: Number(e.target.value) }))}
                 >
@@ -610,7 +729,7 @@ function AnalyzerApp() {
                   hint="Для запросов без позиции сайта: включаем строку, если в топ-10 найдено не меньше выбранного количества конкурентов."
                 />
                 <select
-                  className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                  className="app-select mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
                   value={settings.top50CompetitorsMin}
                   onChange={(e) => setSettings((s) => ({ ...s, top50CompetitorsMin: Number(e.target.value) }))}
                 >
@@ -629,7 +748,7 @@ function AnalyzerApp() {
                 />
                 <textarea
                   rows={5}
-                  className="mt-1 h-[120px] w-full resize-y overflow-y-auto rounded-md border border-slate-300 bg-white p-2 font-mono text-sm"
+                  className="app-input mt-1 h-[120px] w-full resize-y overflow-y-auto rounded-md border border-slate-300 bg-white p-2 font-mono text-sm"
                   placeholder={"example-competitor.ru\nanother-site.ru"}
                   value={manualCompetitorsInput}
                   onChange={(e) => setManualCompetitorsInput(e.target.value)}
@@ -645,13 +764,14 @@ function AnalyzerApp() {
           </div>
 
           <div className="flex items-end">
-            <button
-              onClick={() => mutation.mutate()}
-              disabled={mutation.isPending || !isDomainValid || requiresManualCompetitors}
-              className="h-[42px] rounded-md bg-blue-600 px-8 py-2 font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {mutation.isPending ? "Анализ..." : "Запустить"}
-            </button>
+              <button
+                onClick={() => mutation.mutate()}
+                disabled={mutation.isPending || !isDomainValid || requiresManualCompetitors}
+                className="app-btn-primary h-[42px] rounded-md bg-blue-600 px-8 py-2 font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {mutation.isPending ? "Анализ..." : "Запустить"}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -681,7 +801,7 @@ function AnalyzerApp() {
             >
               <div className="mb-4 h-16 w-16 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
               <h3 className="text-lg font-medium text-slate-900">Сбор данных</h3>
-              <p className="max-w-xs text-center text-slate-500">Из-за ограничений API Keys.so сбор может занять до минуты.</p>
+              <p className="max-w-xs text-center text-slate-500">Из-за ограничений API Keys.so сбор может занять несколько минут.</p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -689,7 +809,7 @@ function AnalyzerApp() {
         {mutation.data && !mutation.isPending && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-              <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
+              <div className="app-card app-density-pad rounded-xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
                 <h3 className="mb-4 text-lg font-semibold">Пересечение по ключевым словам</h3>
                 <div className="h-[300px]">
                   <ResponsiveContainer width="100%" height="100%">
@@ -710,14 +830,14 @@ function AnalyzerApp() {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="app-card app-density-pad rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h3 className="mb-4 text-lg font-semibold">Сводка</h3>
                 <div className="space-y-4">
-                  <div className="rounded-lg bg-blue-50 p-4">
+                  <div className="app-summary-primary rounded-lg bg-blue-50 p-4">
                     <p className="text-sm font-medium text-blue-600">Проанализировано фраз</p>
                     <p className="text-2xl font-bold text-blue-900">{tableFilteredData.length}</p>
                   </div>
-                  <div className="rounded-lg bg-green-50 p-4">
+                  <div className="app-summary-secondary rounded-lg bg-green-50 p-4">
                     <p className="text-sm font-medium text-green-600">Найдено конкурентов</p>
                     <p className="text-2xl font-bold text-green-900">{mutation.data.competitors.length}</p>
                   </div>
@@ -725,7 +845,7 @@ function AnalyzerApp() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="app-card app-density-pad rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
               <h3 className="mb-4 text-lg font-semibold">Диагностика этапов</h3>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                 <div className="rounded-lg bg-slate-50 p-3">
@@ -785,7 +905,7 @@ function AnalyzerApp() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="app-card app-density-pad rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
               <h3 className="mb-4 text-lg font-semibold">Результаты по стадиям</h3>
               <div className="space-y-3">
                 {stageOrder.map((stageKey) => {
@@ -838,16 +958,21 @@ function AnalyzerApp() {
               </div>
             </div>
 
-            <div className="w-full rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="app-card w-full rounded-xl border border-slate-200 bg-white shadow-sm">
               <div className="flex items-center justify-between border-b border-slate-100 p-6">
                 <h3 className="text-lg font-semibold">Таблица сравнения позиций</h3>
                 <div className="flex items-center gap-4">
-                  <button type="button" onClick={copyTableToClipboard} className="text-sm font-medium text-blue-600 hover:underline">
+                  <button type="button" onClick={copyTableToClipboard} className="app-link text-sm font-medium text-blue-600 hover:underline">
                     Скопировать
                   </button>
+                  {copySuccessVisible && (
+                    <span className="text-sm font-semibold text-emerald-600" title="Скопировано">
+                      ✓
+                    </span>
+                  )}
                   <button
                     onClick={() => window.open(`/api/export/${mutation.data?.analysis_id}`, "_blank")}
-                    className="text-sm font-medium text-blue-600 hover:underline"
+                    className="app-link text-sm font-medium text-blue-600 hover:underline"
                   >
                     Скачать Excel
                   </button>
@@ -860,7 +985,7 @@ function AnalyzerApp() {
                     hint="Локальный фильтр таблицы: показываем строки, где хотя бы один конкурент имеет позицию от 1 до выбранного значения."
                   />
                   <select
-                    className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                    className="app-select mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
                     value={tableCompetitorsTopPos}
                     onChange={(e) => setTableCompetitorsTopPos(Number(e.target.value))}
                   >
@@ -883,7 +1008,7 @@ function AnalyzerApp() {
                     hint="Локальный фильтр таблицы: показываем строки, где позиция сайта строго больше выбранного порога."
                   />
                   <select
-                    className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                    className="app-select mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
                     value={tableMainMinPos}
                     onChange={(e) => setTableMainMinPos(e.target.value === "all" ? "all" : Number(e.target.value))}
                   >
@@ -896,7 +1021,11 @@ function AnalyzerApp() {
                   </select>
                 </label>
               </div>
-              <ResultTable data={tableFilteredData} domains={[mutation.data.domain, ...visibleCompetitors]} />
+              <ResultTable
+                data={tableFilteredData}
+                domains={[mutation.data.domain, ...visibleCompetitors]}
+                variant={visualTheme}
+              />
             </div>
           </motion.div>
         )}

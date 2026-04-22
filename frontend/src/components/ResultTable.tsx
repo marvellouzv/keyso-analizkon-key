@@ -3,6 +3,7 @@
 interface ResultTableProps {
   data: Array<Record<string, number | string>>;
   domains: string[];
+  variant?: "clean" | "executive" | "dense";
 }
 
 type SortDirection = "asc" | "desc";
@@ -14,7 +15,7 @@ const getPosColor = (pos: number) => {
   return "text-slate-600";
 };
 
-export const ResultTable: React.FC<ResultTableProps> = ({ data, domains }) => {
+export const ResultTable: React.FC<ResultTableProps> = ({ data, domains, variant = "clean" }) => {
   const mainDomain = domains[0];
   const topScrollRef = React.useRef<HTMLDivElement | null>(null);
   const bottomScrollRef = React.useRef<HTMLDivElement | null>(null);
@@ -26,6 +27,8 @@ export const ResultTable: React.FC<ResultTableProps> = ({ data, domains }) => {
   const [sortDirection, setSortDirection] = React.useState<SortDirection>("desc");
   const [colWidths, setColWidths] = React.useState<Record<string, number>>({});
   const resizingRef = React.useRef<{ key: string; startX: number; startWidth: number } | null>(null);
+  const isExecutive = variant === "executive";
+  const isDense = variant === "dense";
 
   const getDefaultWidth = React.useCallback((key: string) => {
     if (key === "word") return 300;
@@ -150,6 +153,26 @@ export const ResultTable: React.FC<ResultTableProps> = ({ data, domains }) => {
   const headerBtnClass =
     "inline-flex w-full items-center justify-center gap-1 rounded px-1 py-0.5 text-slate-700 hover:bg-slate-100";
 
+  const topScrollClass = isExecutive
+    ? "mb-2 overflow-x-auto overflow-y-hidden rounded border border-slate-300 bg-slate-100"
+    : "mb-2 overflow-x-auto overflow-y-hidden rounded border border-slate-200 bg-slate-50";
+  const headerRowClass = isExecutive
+    ? "border-b border-slate-300 bg-slate-100"
+    : "border-b border-slate-200 bg-slate-50";
+  const thPaddingClass = isDense ? "p-2.5" : "p-4";
+  const tdPaddingClass = isDense ? "p-2.5" : "p-4";
+  const tableClass = isDense
+    ? "w-max min-w-full border-collapse text-left text-[13px]"
+    : "w-max min-w-full border-collapse text-left";
+  const stickyWordBgClass = isExecutive ? "bg-slate-50" : "bg-white";
+  const statWordstatCellClass = isExecutive
+    ? "bg-amber-50/50 text-amber-800"
+    : "bg-indigo-50/40 text-indigo-700";
+  const statCompetitorsCellClass = isExecutive
+    ? "bg-cyan-50/60 text-cyan-800"
+    : "bg-emerald-50/40 text-emerald-700";
+  const mainDomainCellClass = isExecutive ? "bg-cyan-50/70" : "bg-sky-50/70";
+
   const columns = React.useMemo(
     () => ["word", "[!Wordstat]", "competitors_top10_count", ...domains],
     [domains],
@@ -157,24 +180,20 @@ export const ResultTable: React.FC<ResultTableProps> = ({ data, domains }) => {
 
   return (
     <div>
-      <div
-        ref={topScrollRef}
-        onScroll={syncFromTop}
-        className="mb-2 overflow-x-auto overflow-y-hidden rounded border border-slate-200 bg-slate-50"
-      >
+      <div ref={topScrollRef} onScroll={syncFromTop} className={topScrollClass}>
         <div style={{ width: `${scrollWidth}px`, height: "12px" }} />
       </div>
 
       <div ref={bottomScrollRef} onScroll={syncFromBottom} className="overflow-x-auto pb-2">
-        <table ref={contentRef} className="w-max min-w-full border-collapse text-left">
+        <table ref={contentRef} className={tableClass}>
           <colgroup>
             {columns.map((columnKey) => (
               <col key={columnKey} style={{ width: `${getColWidth(columnKey)}px` }} />
             ))}
           </colgroup>
           <thead>
-            <tr className="border-b border-slate-200 bg-slate-50">
-              <th className="relative sticky left-0 z-10 bg-slate-50 p-4 font-semibold text-slate-700">
+            <tr className={headerRowClass}>
+              <th className={`relative sticky left-0 z-10 ${isExecutive ? "bg-slate-100" : "bg-slate-50"} ${thPaddingClass} font-semibold text-slate-700`}>
                 <button type="button" onClick={() => onSort("word")} className={headerBtnClass}>
                   Keyword <span className="text-xs">{sortIndicator("word")}</span>
                 </button>
@@ -186,7 +205,7 @@ export const ResultTable: React.FC<ResultTableProps> = ({ data, domains }) => {
                   className="absolute inset-y-0 right-0 w-2 cursor-col-resize"
                 />
               </th>
-              <th className="relative p-4 text-center font-semibold text-slate-700">
+              <th className={`relative ${thPaddingClass} text-center font-semibold text-slate-700`}>
                 <button type="button" onClick={() => onSort("[!Wordstat]")} className={headerBtnClass}>
                   [!Wordstat] <span className="text-xs">{sortIndicator("[!Wordstat]")}</span>
                 </button>
@@ -198,7 +217,7 @@ export const ResultTable: React.FC<ResultTableProps> = ({ data, domains }) => {
                   className="absolute inset-y-0 right-0 w-2 cursor-col-resize"
                 />
               </th>
-              <th className="relative p-4 text-center font-semibold text-slate-700">
+              <th className={`relative ${thPaddingClass} text-center font-semibold text-slate-700`}>
                 <button type="button" onClick={() => onSort("competitors_top10_count")} className={headerBtnClass}>
                   Top-10 competitors <span className="text-xs">{sortIndicator("competitors_top10_count")}</span>
                 </button>
@@ -213,7 +232,7 @@ export const ResultTable: React.FC<ResultTableProps> = ({ data, domains }) => {
               {domains.map((d) => (
                 <th
                   key={d}
-                  className={`relative p-4 text-center font-semibold ${d === mainDomain ? "bg-sky-50 text-sky-700" : "text-slate-700"}`}
+                  className={`relative ${thPaddingClass} text-center font-semibold ${d === mainDomain ? (isExecutive ? "bg-cyan-100 text-cyan-900" : "bg-sky-50 text-sky-700") : "text-slate-700"}`}
                 >
                   <button type="button" onClick={() => onSort(d)} className={headerBtnClass}>
                     {d.length > 15 ? `${d.substring(0, 12)}...` : d} <span className="text-xs">{sortIndicator(d)}</span>
@@ -232,17 +251,22 @@ export const ResultTable: React.FC<ResultTableProps> = ({ data, domains }) => {
           <tbody>
             {sortedData.map((row, i) => (
               <tr key={i} className="border-b border-slate-100 transition-colors hover:bg-slate-50/50">
-                <td className="sticky left-0 z-10 border-r border-slate-100 bg-white p-4 font-medium text-slate-900">
+                <td className={`sticky left-0 z-10 border-r border-slate-100 ${stickyWordBgClass} ${tdPaddingClass} font-medium text-slate-900`}>
                   {String(row.word ?? "")}
                 </td>
-                <td className="bg-indigo-50/40 p-4 text-center font-semibold text-indigo-700">{Number(row["[!Wordstat]"] ?? 0)}</td>
-                <td className="bg-emerald-50/40 p-4 text-center font-semibold text-emerald-700">
+                <td className={`${statWordstatCellClass} ${tdPaddingClass} text-center font-semibold`}>
+                  {Number(row["[!Wordstat]"] ?? 0)}
+                </td>
+                <td className={`${statCompetitorsCellClass} ${tdPaddingClass} text-center font-semibold`}>
                   {Number(row["competitors_top10_count"] ?? 0)}
                 </td>
                 {domains.map((d) => {
                   const pos = Number(row[d] ?? 101);
                   return (
-                    <td key={d} className={`p-4 text-center ${d === mainDomain ? "bg-sky-50/70" : ""} ${getPosColor(pos)}`}>
+                    <td
+                      key={d}
+                      className={`${tdPaddingClass} text-center ${d === mainDomain ? mainDomainCellClass : ""} ${getPosColor(pos)}`}
+                    >
                       {pos > 100 ? "-" : pos}
                     </td>
                   );

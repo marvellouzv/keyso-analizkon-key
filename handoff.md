@@ -593,3 +593,33 @@
 - Files:
   - `backend/main.py` (Excel column rename)
   - `frontend/src/App.tsx` (copy-to-clipboard header label)
+## [2026-04-22] - Added 3 visual UI themes (Clean / Executive / Data-Dense)
+- Frontend visual theming implemented in `frontend/src/App.tsx`, `frontend/src/components/ResultTable.tsx`, `frontend/src/index.css`.
+- Added theme switcher in the top block with 3 options:
+  - `Чистый Analytics`
+  - `Analytics + Executive`
+  - `Analytics + Data-Dense`
+- Theme selection now updates UI without re-running analysis.
+- Added style tokens and reusable semantic classes for cards, inputs, buttons, links, chips.
+- Added table-level variant support:
+  - `executive`: stronger contrast and premium accents
+  - `dense`: reduced paddings and tighter typography for large datasets
+- Updated base typography for UI themes via Google Fonts imports.
+- Validation: `npm run build` passed.
+## [2026-04-22] - Excel export frequency header normalization
+- Backend export (`/api/export/{analysis_id}`) hardened to always normalize frequency header to `Частотность`.
+- Added fallback column rename mapping: `частотность` -> `Частотность` in `backend/main.py`.
+## [2026-04-22] - Clipboard export: rounded priority
+- Frontend copy-to-clipboard logic updated in `frontend/src/App.tsx`.
+- Column `Приоритет` (`opportunity_score`) is now rounded to integer when copying table data.
+## [2026-04-22] - Copy success indicator in table header
+- Frontend (`frontend/src/App.tsx`): after successful `Скопировать`, a green check mark appears near the link and auto-hides after 3 seconds.
+- Added timeout cleanup on unmount to avoid stale timers.
+## [2026-04-22] - Status log decomposition for final table stage
+- Frontend status flow in `frontend/src/App.tsx` updated: final generic step was decomposed into detailed actions.
+- Added explicit steps for wordstat calculation, priority metrics, pool creation, site/competitor filters, sorting, and result limiting.
+## [2026-04-22] - Fixed copy checkmark behavior and LAN clipboard fallback
+- Frontend (`frontend/src/App.tsx`): copy success checkmark is now reset at new analyze start, so it no longer appears after loading results from previous copy action.
+- Added robust clipboard fallback via hidden textarea + `document.execCommand("copy")` for contexts where `navigator.clipboard` is unavailable (e.g. some LAN/non-secure access cases).
+- Success checkmark now reflects real copy success and hides after 3 seconds as expected.
+- Validation: `npm run build` passed.

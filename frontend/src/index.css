@@ -1,16 +1,162 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: "Plus Jakarta Sans", Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
 }
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
   background-color: #f8fafc;
+}
+
+#root {
+  width: 100%;
+}
+
+.theme-shell {
+  --app-title-color: #0f172a;
+  --app-muted-color: #64748b;
+  --app-card-bg: #ffffff;
+  --app-soft-bg: #f8fafc;
+  --app-border: #e2e8f0;
+  --app-shadow: 0 10px 28px -16px rgba(15, 23, 42, 0.2);
+  --app-link: #2563eb;
+  --app-input-bg: #ffffff;
+  --app-input-border: #cbd5e1;
+  --app-btn-bg: #2563eb;
+  --app-btn-hover: #1d4ed8;
+  --app-btn-text: #ffffff;
+  --app-chip-idle-bg: #ffffff;
+  --app-chip-idle-color: #334155;
+  --app-chip-idle-border: #cbd5e1;
+  --app-chip-active-bg: #2563eb;
+  --app-chip-active-color: #ffffff;
+  --app-chip-active-border: #2563eb;
+  --app-summary-primary-bg: #eff6ff;
+  --app-summary-secondary-bg: #ecfdf5;
+  --app-title-font: "Manrope", "Plus Jakarta Sans", sans-serif;
+  --app-body-font: "Plus Jakarta Sans", Inter, sans-serif;
+  font-family: var(--app-body-font);
+}
+
+.theme-shell.theme-clean {
+  --app-title-color: #0f172a;
+  --app-link: #1d4ed8;
+  --app-chip-active-bg: #1d4ed8;
+  --app-chip-active-border: #1d4ed8;
+}
+
+.theme-shell.theme-executive {
+  --app-title-color: #0f172a;
+  --app-muted-color: #475569;
+  --app-card-bg: #ffffff;
+  --app-soft-bg: #f1f5f9;
+  --app-border: #cbd5e1;
+  --app-shadow: 0 14px 30px -16px rgba(15, 23, 42, 0.28);
+  --app-link: #0f766e;
+  --app-input-border: #94a3b8;
+  --app-btn-bg: #0f766e;
+  --app-btn-hover: #0f5f5a;
+  --app-chip-active-bg: #0f766e;
+  --app-chip-active-border: #0f766e;
+  --app-summary-primary-bg: #ecfeff;
+  --app-summary-secondary-bg: #ecfdf5;
+  --app-title-font: "IBM Plex Sans", "Plus Jakarta Sans", sans-serif;
+}
+
+.theme-shell.theme-dense {
+  --app-title-color: #0b1324;
+  --app-muted-color: #4b5563;
+  --app-card-bg: #ffffff;
+  --app-soft-bg: #f8fafc;
+  --app-border: #d1d5db;
+  --app-shadow: 0 8px 18px -14px rgba(2, 6, 23, 0.24);
+  --app-link: #0f766e;
+  --app-input-border: #9ca3af;
+  --app-btn-bg: #0f766e;
+  --app-btn-hover: #0f5f5a;
+  --app-chip-active-bg: #0f766e;
+  --app-chip-active-border: #0f766e;
+  --app-summary-primary-bg: #f0f9ff;
+  --app-summary-secondary-bg: #f0fdf4;
+  --app-title-font: "IBM Plex Sans", "Plus Jakarta Sans", sans-serif;
+  --app-body-font: "IBM Plex Sans", "Plus Jakarta Sans", sans-serif;
+}
+
+.theme-shell .app-title {
+  color: var(--app-title-color) !important;
+  font-family: var(--app-title-font);
+  letter-spacing: -0.02em;
+}
+
+.theme-shell .app-subtitle {
+  color: var(--app-muted-color) !important;
+}
+
+.theme-shell .app-card {
+  background-color: var(--app-card-bg) !important;
+  border-color: var(--app-border) !important;
+  box-shadow: var(--app-shadow) !important;
+}
+
+.theme-shell .app-card-soft {
+  background-color: var(--app-soft-bg) !important;
+  border-color: var(--app-border) !important;
+}
+
+.theme-shell .app-input,
+.theme-shell .app-select {
+  background-color: var(--app-input-bg) !important;
+  border-color: var(--app-input-border) !important;
+}
+
+.theme-shell .app-btn-primary {
+  background-color: var(--app-btn-bg) !important;
+  color: var(--app-btn-text) !important;
+}
+
+.theme-shell .app-btn-primary:hover {
+  background-color: var(--app-btn-hover) !important;
+}
+
+.theme-shell .app-link {
+  color: var(--app-link) !important;
+}
+
+.theme-shell .app-theme-chip-idle,
+.theme-shell .app-preset-chip-idle {
+  background-color: var(--app-chip-idle-bg) !important;
+  color: var(--app-chip-idle-color) !important;
+  border-color: var(--app-chip-idle-border) !important;
+}
+
+.theme-shell .app-theme-chip-active,
+.theme-shell .app-preset-chip-active {
+  background-color: var(--app-chip-active-bg) !important;
+  color: var(--app-chip-active-color) !important;
+  border-color: var(--app-chip-active-border) !important;
+}
+
+.theme-shell .app-summary-primary {
+  background-color: var(--app-summary-primary-bg) !important;
+}
+
+.theme-shell .app-summary-secondary {
+  background-color: var(--app-summary-secondary-bg) !important;
+}
+
+.theme-shell.theme-dense .app-density-pad {
+  padding: 1rem !important;
+}
+
+.theme-shell.theme-dense .app-theme-chip,
+.theme-shell.theme-dense .app-preset-chip {
+  padding: 0.35rem 0.6rem !important;
+  font-size: 0.78rem !important;
 }
