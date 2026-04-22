@@ -490,3 +490,88 @@
   - calculate `[!Wordstat]` and competition metrics
   - build and sort final table
 - Validation: `npx tsc --noEmit` passed.
+## [2026-04-22] - Added TOP50 competitors threshold logic and 'All' min-site option
+- Startup form (`frontend/src/App.tsx`): added field `Запросы за ТОП50, конкуренты` with values `3, 5, 7, 10, 12` (default `3`).
+- Table filter block: `Мин. позиция сайта` now includes `Все` option.
+- Local recalculation logic updated:
+  - standard rows: main site has position and passes min-site filter + at least one competitor in selected top range.
+  - additional rows: main site has no position, but competitors in top-10 count is >= `Запросы за ТОП50, конкуренты` threshold.
+- Implementation is done as separate local computation in existing table rebuild flow (no extra API request).
+- Validation: `npx tsc --noEmit` passed.
+## [2026-04-22] - Included competitor-only keywords in table pool
+- Fixed backend pool assembly in `backend/services/analyzer.py`.
+- `table_pool_data` now uses outer join of site + competitors, so rows with no analyzed-site position are included.
+- This enables local table logic to show additional rows where site has no position but competitors satisfy TOP-10 threshold (`Запросы за ТОП50, конкуренты`).
+- Validation: Python syntax check passed.
+## [2026-04-22] - Adjusted TOP50 no-site logic in local table filters
+- Updated `frontend/src/App.tsx` local filtering semantics:
+  - "site has position" for main filter now means position in TOP50 (`<= 50`)
+  - "no site position in TOP50" now means position `> 50` or missing
+- Additional inclusion rule now applies to TOP50-out rows:
+  - include if competitors in TOP10 count >= `Запросы за ТОП50, конкуренты`
+- For such rows, analyzed-site column is masked to `101` (displayed as `-`) to match "no TOP50 position" behavior in table.
+- Validation: `npx tsc --noEmit` passed.
+## [2026-04-22] - Added dedicated competitor-only merge stage in backend pipeline
+- Implemented separate competitor-only processing stage in `backend/services/analyzer.py`:
+  - Builds `competitor_only_selected` from combined competitor exports.
+  - Condition: no TOP50 position for analyzed site (`site_pos > 50`) and competitors in TOP10 >= `top50_competitors_min`.
+- Then merges competitor-only rows with dataset after main competitor filter.
+  - New stage: `after_competitor_merge`.
+  - Deduplicates by `word` after merge (keeps highest-priority row).
+- Restored backend `after_competitor_filter` as explicit filter (`competitors_top10_count > 0`) for main-site branch before merge.
+- Extended request schema:
+  - `top50_competitors_min` added to `AnalyzeRequest` (`backend/schemas.py`).
+- Frontend integration (`frontend/src/App.tsx`):
+  - Sends `top50_competitors_min` from startup field.
+  - Added new stage labels in `Результаты по стадиям`:
+    - `Конкурентные ключи без ТОП50 сайта`
+    - `После объединения с конкурентными ключами`
+- Validation: Python syntax checks passed; `npx tsc --noEmit` passed.
+## [2026-04-22] - Added competitors count option 3
+- Updated startup form in `frontend/src/App.tsx`:
+  - `Количество конкурентов` now includes `3` (options: `3, 5, 10, 15, 20`).
+- Backend already supports this value (`competitors_limit` is `ge=1, le=20` in `backend/schemas.py`), so processing works without additional backend changes.
+- Validation: `npx tsc --noEmit` passed.
+## [2026-04-22] - Default final table sorting updated
+- Updated `frontend/src/components/ResultTable.tsx` default sorting:
+  - key: `Top-10 competitors` (`competitors_top10_count`)
+  - direction: descending
+- Validation: `npx tsc --noEmit` passed.
+## [2026-04-22] - Added manual competitors input in startup form
+- Frontend (`frontend/src/App.tsx`):
+  - Added multi-line field `Конкуренты вручную` (5 rows + scroll, resizable).
+  - One domain per line.
+  - Values are parsed and deduplicated before request (`manual_competitors`).
+- Backend:
+  - `backend/schemas.py`: added `manual_competitors: List[str]` to `AnalyzeRequest`.
+  - `backend/main.py`:
+    - added domain normalizer helper.
+    - manual competitors are normalized and merged on top of API competitors.
+    - deduplication applied; analyzed domain excluded.
+    - competitor data fetch now runs for combined list.
+- Validation: Python syntax checks passed; `npx tsc --noEmit` passed.
+## [2026-04-22] - Domain input now accepts full URLs and auto-normalizes
+- Frontend (`frontend/src/App.tsx`):
+  - Added `normalizeDomainInput` helper.
+  - Domain field now accepts values like `https://www.scp-garant.ru/`.
+  - On blur, value is auto-normalized to clean domain (e.g. `scp-garant.ru`).
+  - Validation now uses normalized value.
+  - Updated field hint and placeholder accordingly.
+- Backend (`backend/main.py`):
+  - Normalizes request domain via `_normalize_domain` before processing.
+  - Uses normalized domain for Keys.so calls, dedup/exclusion checks, history save, and response.
+  - Returns `400 Invalid domain` if normalized domain is empty.
+- Validation: Python syntax check passed; `npx tsc --noEmit` passed.
+## [2026-04-22] - Added competitors count option 0 with manual-only mode
+- Startup form (`frontend/src/App.tsx`):
+  - `Количество конкурентов` now includes `0`.
+  - Added UX validation: when value is `0`, at least one domain must be set in `Конкуренты вручную`.
+  - Run button is disabled until this condition is satisfied.
+- Frontend payload now sends parsed `manual_competitors` array from textarea.
+- Backend:
+  - `backend/schemas.py`: `competitors_limit` lower bound changed to `0`.
+  - `backend/main.py`:
+    - if `competitors_limit == 0`, API competitors are not requested.
+    - only manual competitors are used.
+    - if `competitors_limit == 0` and manual list is empty, API returns `400` with explicit message.
+- Validation: Python syntax checks passed; `npx tsc --noEmit` passed.

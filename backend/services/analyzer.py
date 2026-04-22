@@ -65,6 +65,7 @@ class SEOAnalyzer:
         main_keywords: List[Dict],
         competitors_data: Dict[str, List[Dict]],
         competitors_top_pos: int = 10,
+        top50_competitors_min: int = 3,
         main_min_pos: int = 10,
         result_limit: int = 500,
         stage_preview_limit: int = 500,
@@ -78,6 +79,8 @@ class SEOAnalyzer:
                     "after_join": 0,
                     "after_main_position_filter": 0,
                     "after_competitor_filter": 0,
+                    "competitor_only_selected": 0,
+                    "after_competitor_merge": 0,
                     "final_output": 0,
                 },
                 {
@@ -86,6 +89,8 @@ class SEOAnalyzer:
                     "after_join": [],
                     "after_main_position_filter": [],
                     "after_competitor_filter": [],
+                    "competitor_only_selected": [],
+                    "after_competitor_merge": [],
                     "final_output": [],
                 },
                 [],
@@ -95,18 +100,23 @@ class SEOAnalyzer:
         main_keywords_raw = len(main_keywords)
         main_keywords_unique = len(df_main)
         stage_main_raw = main_keywords[:stage_preview_limit]
-        # Keep analyzed site queries as base and use index join for faster assembly.
+        # Main table keeps analyzed site words as base for diagnostics compatibility.
         final_df = df_main.set_index("word")
+        # Pool table is used by frontend local filters and must include competitor-only words too.
+        pool_df = df_main.set_index("word")
 
         for comp_domain, keywords in competitors_data.items():
             if not keywords:
                 final_df[comp_domain] = 101
+                pool_df[comp_domain] = 101
                 continue
 
             df_comp = SEOAnalyzer._domain_positions_df(keywords, comp_domain)
             final_df = final_df.join(df_comp.set_index("word")[[comp_domain]], how="left")
+            pool_df = pool_df.join(df_comp.set_index("word")[[comp_domain]], how="outer")
 
         final_df = final_df.fillna(101).reset_index()
+        pool_df = pool_df.fillna(101).reset_index()
         after_join = len(final_df)
         competitor_columns = list(competitors_data.keys())
         stage_main_unique = SEOAnalyzer._stage_preview(df_main, stage_preview_limit)
@@ -114,9 +124,10 @@ class SEOAnalyzer:
 
         wordstat = SEOAnalyzer._wordstat_map(main_keywords, competitors_data)
         final_df["[!Wordstat]"] = final_df["word"].map(wordstat).fillna(0).astype(int)
+        pool_df["[!Wordstat]"] = pool_df["word"].map(wordstat).fillna(0).astype(int)
 
         pool_columns = ["word", "[!Wordstat]", main_domain, *competitor_columns]
-        table_pool_data = final_df[pool_columns].to_dict(orient="records")
+        table_pool_data = pool_df[pool_columns].to_dict(orient="records")
 
         # Keep only rows where the analyzed site rank is below the selected threshold.
         final_df = final_df[final_df[main_domain] > main_min_pos]
@@ -130,10 +141,27 @@ class SEOAnalyzer:
         else:
             final_df["competitors_top10_count"] = 0
 
-        # Do not hard-filter rows by competitor top range on backend.
-        # The final UI table applies interactive local filters.
+        # Main-site branch: keep rows where at least one competitor is in configured top range.
+        if competitor_columns:
+            final_df = final_df[final_df["competitors_top10_count"] > 0]
         after_competitor_filter = len(final_df)
         stage_after_comp_filter = SEOAnalyzer._stage_preview(final_df, stage_preview_limit)
+
+        # Competitor-only branch:
+        # include words where analyzed site has no TOP50 position, but enough competitors are in TOP10.
+        competitor_only_df = pool_df.copy()
+        if competitor_columns:
+            competitor_only_df["competitors_top10_count"] = (
+                competitor_only_df[competitor_columns].le(10).sum(axis=1).astype(int)
+            )
+            competitor_only_df = competitor_only_df[
+                (competitor_only_df[main_domain] > 50)
+                & (competitor_only_df["competitors_top10_count"] >= top50_competitors_min)
+            ]
+        else:
+            competitor_only_df["competitors_top10_count"] = 0
+            competitor_only_df = competitor_only_df.iloc[0:0]
+        stage_competitor_only = SEOAnalyzer._stage_preview(competitor_only_df, stage_preview_limit)
 
         # Weighted ranking:
         # - Wordstat is the main signal (demand potential).
@@ -141,6 +169,18 @@ class SEOAnalyzer:
         final_df["opportunity_score"] = (
             final_df["[!Wordstat]"] * (1 + final_df["competitors_top10_count"] * 0.6)
         ).round(2)
+        competitor_only_df["opportunity_score"] = (
+            competitor_only_df["[!Wordstat]"] * (1 + competitor_only_df["competitors_top10_count"] * 0.6)
+        ).round(2)
+
+        merged_df = pd.concat([final_df, competitor_only_df], ignore_index=True, sort=False)
+        if not merged_df.empty:
+            merged_df = merged_df.sort_values(
+                by=["opportunity_score", "competitors_top10_count", "[!Wordstat]", "word"],
+                ascending=[False, False, False, True],
+            )
+            merged_df = merged_df.drop_duplicates(subset=["word"], keep="first")
+        stage_after_merge = SEOAnalyzer._stage_preview(merged_df, stage_preview_limit)
 
         ordered_columns = [
             "word",
@@ -150,7 +190,7 @@ class SEOAnalyzer:
             main_domain,
             *competitor_columns,
         ]
-        final_df = final_df[ordered_columns]
+        final_df = merged_df[ordered_columns]
         final_df = final_df.sort_values(
             by=["opportunity_score", "competitors_top10_count", "[!Wordstat]", "word"],
             ascending=[False, False, False, True],
@@ -163,6 +203,8 @@ class SEOAnalyzer:
             "after_join": int(after_join),
             "after_main_position_filter": int(after_main_position_filter),
             "after_competitor_filter": int(after_competitor_filter),
+            "competitor_only_selected": int(len(competitor_only_df)),
+            "after_competitor_merge": int(len(merged_df)),
             "final_output": int(len(final_df)),
         }
         stage_results = {
@@ -171,6 +213,8 @@ class SEOAnalyzer:
             "after_join": stage_after_join,
             "after_main_position_filter": stage_after_main_filter,
             "after_competitor_filter": stage_after_comp_filter,
+            "competitor_only_selected": stage_competitor_only,
+            "after_competitor_merge": stage_after_merge,
             "final_output": stage_final_output,
         }
         return final_df, diagnostics, stage_results, table_pool_data

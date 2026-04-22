@@ -22,8 +22,8 @@ export const ResultTable: React.FC<ResultTableProps> = ({ data, domains }) => {
   const [scrollWidth, setScrollWidth] = React.useState(0);
   const syncingRef = React.useRef<"top" | "bottom" | null>(null);
 
-  const [sortKey, setSortKey] = React.useState<string>("word");
-  const [sortDirection, setSortDirection] = React.useState<SortDirection>("asc");
+  const [sortKey, setSortKey] = React.useState<string>("competitors_top10_count");
+  const [sortDirection, setSortDirection] = React.useState<SortDirection>("desc");
   const [colWidths, setColWidths] = React.useState<Record<string, number>>({});
   const resizingRef = React.useRef<{ key: string; startX: number; startWidth: number } | null>(null);
 

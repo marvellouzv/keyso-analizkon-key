@@ -36,6 +36,19 @@ BACKEND_DIR = Path(__file__).resolve().parent
 FRONTEND_DIST = BACKEND_DIR.parent / "frontend" / "dist"
 
 
+def _normalize_domain(value: str) -> str:
+    domain = (value or "").strip().lower()
+    if not domain:
+        return ""
+    if "://" in domain:
+        domain = domain.split("://", 1)[1]
+    domain = domain.split("/", 1)[0]
+    domain = domain.split(":", 1)[0]
+    if domain.startswith("www."):
+        domain = domain[4:]
+    return domain
+
+
 @app.get("/api/status")
 async def status():
     return {"status": "ok", "message": "SEO Analyzer API is running"}
@@ -49,10 +62,25 @@ async def analyze(
 ):
     if not KEYSO_TOKEN:
         raise HTTPException(status_code=500, detail="KEYSO_TOKEN is not configured")
+    request_domain = _normalize_domain(request.domain)
+    if not request_domain:
+        raise HTTPException(status_code=400, detail="Invalid domain")
 
     try:
+        manual_competitors = []
+        for item in request.manual_competitors:
+            normalized = _normalize_domain(item)
+            if normalized:
+                manual_competitors.append(normalized)
+
+        if request.competitors_limit == 0 and not manual_competitors:
+            raise HTTPException(
+                status_code=400,
+                detail="When competitors_limit is 0, add at least one domain in manual_competitors",
+            )
+
         main_keys = await keys_client.get_keywords_top_positions(
-            request.domain,
+            request_domain,
             request.base,
             max_pos=None,
             per_page=100,
@@ -62,11 +90,25 @@ async def analyze(
         if not main_keys:
             raise HTTPException(status_code=404, detail="Keywords not found for domain")
 
-        competitors = await keys_client.get_competitors(
-            request.domain,
-            request.base,
-            limit=request.competitors_limit,
-        )
+        if request.competitors_limit > 0:
+            competitors = await keys_client.get_competitors(
+                request_domain,
+                request.base,
+                limit=request.competitors_limit,
+            )
+        else:
+            competitors = []
+
+        competitors_set = set()
+        combined_competitors = []
+        for comp in [*competitors, *manual_competitors]:
+            normalized = _normalize_domain(comp)
+            if not normalized or normalized == request_domain:
+                continue
+            if normalized in competitors_set:
+                continue
+            competitors_set.add(normalized)
+            combined_competitors.append(normalized)
 
         sem = asyncio.Semaphore(2)
 
@@ -81,14 +123,15 @@ async def analyze(
                 )
                 return comp, data
 
-        comp_pairs = await asyncio.gather(*(fetch_competitor(comp) for comp in competitors))
+        comp_pairs = await asyncio.gather(*(fetch_competitor(comp) for comp in combined_competitors))
         comp_results = {comp: data for comp, data in comp_pairs}
 
         df, diagnostics, stage_results, table_pool_data = await SEOAnalyzer.process_data(
-            request.domain,
+            request_domain,
             main_keys,
             comp_results,
             competitors_top_pos=request.competitors_top_pos,
+            top50_competitors_min=request.top50_competitors_min,
             main_min_pos=request.main_min_pos,
             result_limit=request.result_limit,
             stage_preview_limit=min(request.result_limit, 3000),
@@ -96,7 +139,7 @@ async def analyze(
         result_data = df.to_dict(orient="records")
 
         history_entry = models.AnalysisHistory(
-            domain=request.domain,
+            domain=request_domain,
             base=request.base,
             data=result_data,
         )
@@ -106,8 +149,8 @@ async def analyze(
 
         return {
             "analysis_id": history_entry.id,
-            "domain": request.domain,
-            "competitors": competitors,
+            "domain": request_domain,
+            "competitors": combined_competitors,
             "table_data": result_data,
             "table_pool_data": table_pool_data,
             "diagnostics": diagnostics,

@@ -63,6 +63,7 @@ type ParseSettings = {
   mainMaxPages: number;
   competitorsMaxPages: number;
   resultLimit: number;
+  top50CompetitorsMin: number;
 };
 
 const PRESET_OPTIONS: Array<{ id: string; label: string; settings: ParseSettings }> = [
@@ -74,6 +75,7 @@ const PRESET_OPTIONS: Array<{ id: string; label: string; settings: ParseSettings
       mainMaxPages: 10,
       competitorsMaxPages: 10,
       resultLimit: 500,
+      top50CompetitorsMin: 3,
     },
   },
   {
@@ -84,6 +86,7 @@ const PRESET_OPTIONS: Array<{ id: string; label: string; settings: ParseSettings
       mainMaxPages: 20,
       competitorsMaxPages: 15,
       resultLimit: 1000,
+      top50CompetitorsMin: 3,
     },
   },
   {
@@ -94,6 +97,7 @@ const PRESET_OPTIONS: Array<{ id: string; label: string; settings: ParseSettings
       mainMaxPages: 30,
       competitorsMaxPages: 20,
       resultLimit: 2000,
+      top50CompetitorsMin: 3,
     },
   },
 ];
@@ -152,6 +156,30 @@ function extractApiErrorMessage(err: any): string {
   return "Неизвестная ошибка";
 }
 
+function parseManualCompetitorsInput(value: string): string[] {
+  const lines = value
+    .split(/\r?\n/)
+    .map((line) => line.trim().toLowerCase())
+    .filter(Boolean);
+  return Array.from(new Set(lines));
+}
+
+function normalizeDomainInput(value: string): string {
+  let domain = (value || "").trim().toLowerCase();
+  if (!domain) {
+    return "";
+  }
+  if (domain.includes("://")) {
+    domain = domain.split("://", 2)[1] ?? "";
+  }
+  domain = domain.split("/", 2)[0] ?? "";
+  domain = domain.split(":", 2)[0] ?? "";
+  if (domain.startsWith("www.")) {
+    domain = domain.slice(4);
+  }
+  return domain;
+}
+
 function AnalyzerApp() {
   const { domain, region, setDomain, setRegion } = useStore();
   const [statusLogs, setStatusLogs] = React.useState<string[]>([]);
@@ -160,16 +188,24 @@ function AnalyzerApp() {
     mainMaxPages: 10,
     competitorsMaxPages: 10,
     resultLimit: 500,
+    top50CompetitorsMin: 3,
   });
   const [activePreset, setActivePreset] = React.useState<string>("fast");
   const [openedStage, setOpenedStage] = React.useState<string | null>(null);
   const [tableCompetitorsTopPos, setTableCompetitorsTopPos] = React.useState<number>(10);
-  const [tableMainMinPos, setTableMainMinPos] = React.useState<number>(10);
+  const [tableMainMinPos, setTableMainMinPos] = React.useState<number | "all">(10);
   const [tableResultLimit, setTableResultLimit] = React.useState<number>(500);
+  const [tableTop50CompetitorsMin, setTableTop50CompetitorsMin] = React.useState<number>(3);
+  const [manualCompetitorsInput, setManualCompetitorsInput] = React.useState<string>("");
+  const manualCompetitors = React.useMemo(
+    () => parseManualCompetitorsInput(manualCompetitorsInput),
+    [manualCompetitorsInput],
+  );
+  const requiresManualCompetitors = settings.competitorsLimit === 0 && manualCompetitors.length === 0;
 
-  const normalizedDomain = domain.trim().toLowerCase();
+  const normalizedDomain = normalizeDomainInput(domain);
   const isDomainValid = DOMAIN_PATTERN.test(normalizedDomain);
-  const showDomainError = normalizedDomain.length > 0 && !isDomainValid;
+  const showDomainError = domain.trim().length > 0 && !isDomainValid;
 
   const addLog = (msg: string) => {
     setStatusLogs((prev) => [...prev, `${new Date().toLocaleTimeString()}: ${msg}`]);
@@ -182,11 +218,14 @@ function AnalyzerApp() {
       setTableCompetitorsTopPos(10);
       setTableMainMinPos(10);
       setTableResultLimit(settings.resultLimit);
+      setTableTop50CompetitorsMin(settings.top50CompetitorsMin);
 
       const res = await axios.post("/api/analyze", {
         domain: normalizedDomain,
         base: region,
         competitors_limit: settings.competitorsLimit,
+        manual_competitors: manualCompetitors,
+        top50_competitors_min: settings.top50CompetitorsMin,
         main_max_pages: settings.mainMaxPages,
         competitors_max_pages: settings.competitorsMaxPages,
         result_limit: settings.resultLimit,
@@ -264,17 +303,32 @@ function AnalyzerApp() {
     const prepared: Array<Record<string, number | string>> = sourceRows
       .filter((row) => {
         const mainPos = Number(row[analyzedDomain] ?? 101);
-        if (!Number.isFinite(mainPos) || mainPos <= tableMainMinPos) {
-          return false;
-        }
-
-        return allCompetitors.some((competitor) => {
+        const hasMainTop50Position = Number.isFinite(mainPos) && mainPos <= 50;
+        const noMainTop50Position = !Number.isFinite(mainPos) || mainPos > 50;
+        const competitorsInSelectedTop = allCompetitors.reduce((acc, competitor) => {
           const compPos = Number(row[competitor] ?? 101);
-          return Number.isFinite(compPos) && compPos <= tableCompetitorsTopPos;
-        });
+          return acc + (Number.isFinite(compPos) && compPos <= tableCompetitorsTopPos ? 1 : 0);
+        }, 0);
+        const competitorsInTop10 = allCompetitors.reduce((acc, competitor) => {
+          const compPos = Number(row[competitor] ?? 101);
+          return acc + (Number.isFinite(compPos) && compPos <= 10 ? 1 : 0);
+        }, 0);
+
+        const mainFilterPass =
+          hasMainTop50Position &&
+          (tableMainMinPos === "all" || mainPos > tableMainMinPos) &&
+          competitorsInSelectedTop > 0;
+
+        const noMainTop50Pass = noMainTop50Position && competitorsInTop10 >= tableTop50CompetitorsMin;
+
+        return mainFilterPass || noMainTop50Pass;
       })
       .map((row) => {
         const maskedRow: Record<string, number | string> = { ...row };
+        const mainPos = Number(maskedRow[analyzedDomain] ?? 101);
+        if (!Number.isFinite(mainPos) || mainPos > 50) {
+          maskedRow[analyzedDomain] = 101;
+        }
         for (const competitor of allCompetitors) {
           const compPos = Number(maskedRow[competitor] ?? 101);
           if (!Number.isFinite(compPos) || compPos > tableCompetitorsTopPos) {
@@ -314,7 +368,7 @@ function AnalyzerApp() {
       });
 
     return prepared.slice(0, tableResultLimit);
-  }, [mutation.data, tableCompetitorsTopPos, tableMainMinPos, tableResultLimit]);
+  }, [mutation.data, tableCompetitorsTopPos, tableMainMinPos, tableResultLimit, tableTop50CompetitorsMin]);
 
   const hasTablePoolData = React.useMemo(() => {
     return Boolean(mutation.data?.table_pool_data && mutation.data.table_pool_data.length > 0);
@@ -349,6 +403,8 @@ function AnalyzerApp() {
     "after_join",
     "after_main_position_filter",
     "after_competitor_filter",
+    "competitor_only_selected",
+    "after_competitor_merge",
     "final_output",
   ] as const;
 
@@ -358,6 +414,8 @@ function AnalyzerApp() {
     after_join: "После объединения с конкурентами",
     after_main_position_filter: "После фильтра позиций сайта",
     after_competitor_filter: "После фильтра конкурентов",
+    competitor_only_selected: "Конкурентные ключи без ТОП50 сайта",
+    after_competitor_merge: "После объединения с конкурентными ключами",
     final_output: "Финальный результат",
   };
 
@@ -372,13 +430,14 @@ function AnalyzerApp() {
         <div className="mb-6 flex flex-wrap gap-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="min-w-[240px] flex-1">
             <label className="mb-1 block text-sm font-medium text-slate-700">
-              <FieldLabel text="Домен" hint="Основной домен для анализа, например: example.com." />
+              <FieldLabel text="Домен" hint="Можно вставлять домен или URL, например: https://www.example.com/." />
             </label>
             <input
               className="w-full rounded-md border border-slate-300 p-2 outline-none transition-all focus:ring-2 focus:ring-blue-500"
-              placeholder="example.com"
+              placeholder="https://www.example.com/"
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
+              onBlur={(e) => setDomain(normalizeDomainInput(e.target.value))}
             />
             {showDomainError && (
               <p className="mt-1 text-sm text-red-600">Введите корректный домен, например `example.com`.</p>
@@ -462,7 +521,7 @@ function AnalyzerApp() {
                   value={settings.competitorsLimit}
                   onChange={(e) => setSettings((s) => ({ ...s, competitorsLimit: Number(e.target.value) }))}
                 >
-                  {[5, 10, 15, 20].map((v) => (
+                  {[0, 3, 5, 10, 15, 20].map((v) => (
                     <option key={v} value={v}>
                       {v}
                     </option>
@@ -500,13 +559,50 @@ function AnalyzerApp() {
                 </select>
               </label>
 
+              <label className="text-sm text-slate-700">
+                <FieldLabel
+                  text="Запросы за ТОП50, конкуренты"
+                  hint="Для запросов без позиции сайта: включаем строку, если в топ-10 найдено не меньше выбранного количества конкурентов."
+                />
+                <select
+                  className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                  value={settings.top50CompetitorsMin}
+                  onChange={(e) => setSettings((s) => ({ ...s, top50CompetitorsMin: Number(e.target.value) }))}
+                >
+                  {[2, 3, 5, 10].map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-sm text-slate-700 md:col-span-2 xl:col-span-4">
+                <FieldLabel
+                  text="Конкуренты вручную"
+                  hint="По одному домену в строке. Эти домены будут добавлены к конкурентам из API."
+                />
+                <textarea
+                  rows={5}
+                  className="mt-1 h-[120px] w-full resize-y overflow-y-auto rounded-md border border-slate-300 bg-white p-2 font-mono text-sm"
+                  placeholder={"example-competitor.ru\nanother-site.ru"}
+                  value={manualCompetitorsInput}
+                  onChange={(e) => setManualCompetitorsInput(e.target.value)}
+                />
+                {requiresManualCompetitors && (
+                  <p className="mt-1 text-xs text-red-600">
+                    При значении `Количество конкурентов = 0` добавьте хотя бы один домен вручную.
+                  </p>
+                )}
+              </label>
+
             </div>
           </div>
 
           <div className="flex items-end">
             <button
               onClick={() => mutation.mutate()}
-              disabled={mutation.isPending || !isDomainValid}
+              disabled={mutation.isPending || !isDomainValid || requiresManualCompetitors}
               className="h-[42px] rounded-md bg-blue-600 px-8 py-2 font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {mutation.isPending ? "Анализ..." : "Запустить"}
@@ -739,8 +835,9 @@ function AnalyzerApp() {
                   <select
                     className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
                     value={tableMainMinPos}
-                    onChange={(e) => setTableMainMinPos(Number(e.target.value))}
+                    onChange={(e) => setTableMainMinPos(e.target.value === "all" ? "all" : Number(e.target.value))}
                   >
+                    <option value="all">Все</option>
                     {[10, 20, 30, 40].map((v) => (
                       <option key={v} value={v}>
                         {">"} {v}
