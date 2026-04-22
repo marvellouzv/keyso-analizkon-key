@@ -575,3 +575,21 @@
     - only manual competitors are used.
     - if `competitors_limit == 0` and manual list is empty, API returns `400` with explicit message.
 - Validation: Python syntax checks passed; `npx tsc --noEmit` passed.
+## [2026-04-22] - Excel export formatting + Copy action in table header
+- Backend (`backend/main.py`) export improvements:
+  - In exported Excel, position values `> 100` are replaced with `-`.
+  - Renamed export columns:
+    - `word` -> `Запросы`
+    - `[!Wordstat]` -> `частотность`
+    - `competitors_top10_count` -> `Конкурентов в ТОП`
+    - `opportunity_score` -> `Приоритет`
+- Frontend (`frontend/src/App.tsx`):
+  - Added `Скопировать` action before `Скачать Excel`.
+  - Copies current filtered table (with same column naming for main metrics) to clipboard as tab-separated text.
+  - Position values `> 100` are copied as `-`.
+- Validation: Python syntax check passed; `npx tsc --noEmit` passed.
+## [2026-04-22] - Capitalized frequency label
+- Updated export/copy label from `частотность` to `Частотность`.
+- Files:
+  - `backend/main.py` (Excel column rename)
+  - `frontend/src/App.tsx` (copy-to-clipboard header label)

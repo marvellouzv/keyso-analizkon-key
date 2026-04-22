@@ -177,6 +177,27 @@ async def export_analysis(analysis_id: int, db: Session = Depends(database.get_d
         raise HTTPException(status_code=400, detail="Analysis entry has no data")
 
     df = pd.DataFrame(entry.data)
+    if df.empty:
+        raise HTTPException(status_code=400, detail="Analysis entry has no rows to export")
+
+    # Replace technical "101" position marker with "-" in exported position columns.
+    metric_columns = {"word", "[!Wordstat]", "competitors_top10_count", "opportunity_score"}
+    position_columns = [col for col in df.columns if col not in metric_columns]
+    for col in position_columns:
+        numeric_series = pd.to_numeric(df[col], errors="coerce")
+        df[col] = numeric_series.apply(
+            lambda value: "-" if pd.isna(value) or value > 100 else int(value) if float(value).is_integer() else value
+        )
+
+    # User-friendly export headers.
+    df = df.rename(
+        columns={
+            "word": "Запросы",
+            "[!Wordstat]": "Частотность",
+            "competitors_top10_count": "Конкурентов в ТОП",
+            "opportunity_score": "Приоритет",
+        }
+    )
     filename = f"{entry.domain.replace('.', '_')}_{entry.id}"
     excel_path = SEOAnalyzer.save_to_excel(df, filename)
     entry.excel_path = excel_path

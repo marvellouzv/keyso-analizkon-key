@@ -397,6 +397,51 @@ function AnalyzerApp() {
     return competitorStats.map((item) => item.competitor);
   }, [mutation.data, tableFilteredData]);
 
+  const copyTableToClipboard = React.useCallback(async () => {
+    if (!mutation.data) {
+      return;
+    }
+
+    const columns = [
+      "word",
+      "[!Wordstat]",
+      "competitors_top10_count",
+      "opportunity_score",
+      mutation.data.domain,
+      ...visibleCompetitors,
+    ];
+
+    const labels: Record<string, string> = {
+      word: "Запросы",
+      "[!Wordstat]": "Частотность",
+      competitors_top10_count: "Конкурентов в ТОП",
+      opportunity_score: "Приоритет",
+    };
+
+    const formatCell = (column: string, row: Record<string, number | string>) => {
+      const raw = row[column];
+      if (column === "word") {
+        return String(raw ?? "");
+      }
+      if (column === "[!Wordstat]" || column === "competitors_top10_count" || column === "opportunity_score") {
+        return String(raw ?? "");
+      }
+      const pos = Number(raw ?? 101);
+      return !Number.isFinite(pos) || pos > 100 ? "-" : String(pos);
+    };
+
+    const headerRow = columns.map((column) => labels[column] ?? column).join("\t");
+    const bodyRows = tableFilteredData.map((row) => columns.map((column) => formatCell(column, row)).join("\t"));
+    const tsv = [headerRow, ...bodyRows].join("\n");
+
+    try {
+      await navigator.clipboard.writeText(tsv);
+      addLog("Таблица скопирована в буфер обмена.");
+    } catch {
+      addLog("ОШИБКА: Не удалось скопировать таблицу в буфер обмена.");
+    }
+  }, [addLog, mutation.data, tableFilteredData, visibleCompetitors]);
+
   const stageOrder = [
     "main_keywords_raw",
     "main_keywords_unique",
@@ -796,12 +841,17 @@ function AnalyzerApp() {
             <div className="w-full rounded-xl border border-slate-200 bg-white shadow-sm">
               <div className="flex items-center justify-between border-b border-slate-100 p-6">
                 <h3 className="text-lg font-semibold">Таблица сравнения позиций</h3>
-                <button
-                  onClick={() => window.open(`/api/export/${mutation.data?.analysis_id}`, "_blank")}
-                  className="text-sm font-medium text-blue-600 hover:underline"
-                >
-                  Скачать Excel
-                </button>
+                <div className="flex items-center gap-4">
+                  <button type="button" onClick={copyTableToClipboard} className="text-sm font-medium text-blue-600 hover:underline">
+                    Скопировать
+                  </button>
+                  <button
+                    onClick={() => window.open(`/api/export/${mutation.data?.analysis_id}`, "_blank")}
+                    className="text-sm font-medium text-blue-600 hover:underline"
+                  >
+                    Скачать Excel
+                  </button>
+                </div>
               </div>
               <div className="grid grid-cols-1 gap-3 border-b border-slate-100 p-6 md:grid-cols-2">
                 <label className="text-sm text-slate-700">
