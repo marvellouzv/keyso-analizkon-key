@@ -235,7 +235,10 @@ export const ResultTable: React.FC<ResultTableProps> = ({ data, domains, variant
                   className={`relative ${thPaddingClass} text-center font-semibold ${d === mainDomain ? (isExecutive ? "bg-cyan-100 text-cyan-900" : "bg-sky-50 text-sky-700") : "text-slate-700"}`}
                 >
                   <button type="button" onClick={() => onSort(d)} className={headerBtnClass}>
-                    {d.length > 15 ? `${d.substring(0, 12)}...` : d} <span className="text-xs">{sortIndicator(d)}</span>
+                    <span className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap" title={d}>
+                      {d}
+                    </span>
+                    <span className="text-xs">{sortIndicator(d)}</span>
                   </button>
                   <div
                     role="separator"

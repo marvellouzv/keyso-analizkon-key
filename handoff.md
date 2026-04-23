@@ -623,3 +623,7 @@
 - Added robust clipboard fallback via hidden textarea + `document.execCommand("copy")` for contexts where `navigator.clipboard` is unavailable (e.g. some LAN/non-secure access cases).
 - Success checkmark now reflects real copy success and hides after 3 seconds as expected.
 - Validation: `npm run build` passed.
+## [2026-04-23] - Domain headers in final table no longer hard-truncated
+- Updated `frontend/src/components/ResultTable.tsx`.
+- Removed hardcoded `substring(...)+...` truncation for domain columns.
+- Domain headers now use CSS ellipsis based on actual column width (`overflow-hidden text-ellipsis whitespace-nowrap`), so expanding a column reveals the full domain.
