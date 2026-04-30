@@ -1,0 +1,11 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: keyso-analyzer-app
+    env_file:
+      - ./backend/.env
+    ports:
+      - "127.0.0.1:${APP_PORT:-8101}:8000"
+    restart: unless-stopped

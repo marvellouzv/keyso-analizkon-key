@@ -35,6 +35,8 @@ keys_client = KeysSoClient(api_key=KEYSO_TOKEN)
 BACKEND_DIR = Path(__file__).resolve().parent
 FRONTEND_DIST = BACKEND_DIR.parent / "frontend" / "dist"
 
+METRIC_COLUMNS = {"word", "[!Wordstat]", "competitors_top10_count", "opportunity_score"}
+
 
 def _normalize_domain(value: str) -> str:
     domain = (value or "").strip().lower()
@@ -47,6 +49,59 @@ def _normalize_domain(value: str) -> str:
     if domain.startswith("www."):
         domain = domain[4:]
     return domain
+
+
+def _build_response_from_history_entry(entry: models.AnalysisHistory) -> dict:
+    payload = entry.data
+
+    if isinstance(payload, dict):
+        table_data = payload.get("table_data", [])
+        table_pool_data = payload.get("table_pool_data", table_data)
+        diagnostics = payload.get("diagnostics", {})
+        stage_results = payload.get("stage_results", {})
+        competitors = payload.get("competitors", [])
+        domain = payload.get("domain", entry.domain)
+    elif isinstance(payload, list):
+        table_data = payload
+        table_pool_data = payload
+        diagnostics = {"final_output": len(payload)}
+        stage_results = {}
+        domain = entry.domain
+        competitors = []
+        if payload:
+            first_row = payload[0]
+            if isinstance(first_row, dict):
+                competitors = [
+                    key
+                    for key in first_row.keys()
+                    if key not in METRIC_COLUMNS and key != domain
+                ]
+    else:
+        table_data = []
+        table_pool_data = []
+        diagnostics = {}
+        stage_results = {}
+        competitors = []
+        domain = entry.domain
+
+    return {
+        "analysis_id": entry.id,
+        "domain": domain,
+        "competitors": competitors,
+        "table_data": table_data,
+        "table_pool_data": table_pool_data,
+        "diagnostics": diagnostics,
+        "stage_results": stage_results,
+    }
+
+
+def _extract_table_data(payload):
+    if isinstance(payload, dict):
+        data = payload.get("table_data", [])
+        return data if isinstance(data, list) else []
+    if isinstance(payload, list):
+        return payload
+    return []
 
 
 @app.get("/api/status")
@@ -73,6 +128,12 @@ async def analyze(
             if normalized:
                 manual_competitors.append(normalized)
 
+        excluded_competitors = set()
+        for item in request.excluded_competitors:
+            normalized = _normalize_domain(item)
+            if normalized and normalized != request_domain:
+                excluded_competitors.add(normalized)
+
         if request.competitors_limit == 0 and not manual_competitors:
             raise HTTPException(
                 status_code=400,
@@ -90,12 +151,44 @@ async def analyze(
         if not main_keys:
             raise HTTPException(status_code=404, detail="Keywords not found for domain")
 
+        def _filter_api_competitors(candidates):
+            seen = set()
+            result = []
+            for comp in candidates:
+                normalized = _normalize_domain(comp)
+                if not normalized or normalized == request_domain:
+                    continue
+                if normalized in excluded_competitors:
+                    continue
+                if normalized in seen:
+                    continue
+                seen.add(normalized)
+                result.append(normalized)
+            return result
+
         if request.competitors_limit > 0:
-            competitors = await keys_client.get_competitors(
-                request_domain,
-                request.base,
-                limit=request.competitors_limit,
-            )
+            max_api_limit = 100
+            fetch_limit = min(max(1, request.competitors_limit), max_api_limit)
+            filtered_api_competitors = []
+
+            while True:
+                api_competitors = await keys_client.get_competitors(
+                    request_domain,
+                    request.base,
+                    limit=fetch_limit,
+                )
+                filtered_api_competitors = _filter_api_competitors(api_competitors)
+                if len(filtered_api_competitors) >= request.competitors_limit:
+                    break
+                if fetch_limit >= max_api_limit:
+                    break
+
+                next_limit = min(max_api_limit, fetch_limit * 2)
+                if next_limit == fetch_limit:
+                    break
+                fetch_limit = next_limit
+
+            competitors = filtered_api_competitors[: request.competitors_limit]
         else:
             competitors = []
 
@@ -104,6 +197,8 @@ async def analyze(
         for comp in [*competitors, *manual_competitors]:
             normalized = _normalize_domain(comp)
             if not normalized or normalized == request_domain:
+                continue
+            if normalized in excluded_competitors:
                 continue
             if normalized in competitors_set:
                 continue
@@ -138,10 +233,29 @@ async def analyze(
         )
         result_data = df.to_dict(orient="records")
 
+        response_payload = {
+            "domain": request_domain,
+            "competitors": combined_competitors,
+            "table_data": result_data,
+            "table_pool_data": table_pool_data,
+            "diagnostics": diagnostics,
+            "stage_results": stage_results,
+            "request": {
+                "base": request.base,
+                "competitors_limit": request.competitors_limit,
+                "manual_competitors": manual_competitors,
+                "excluded_competitors": sorted(excluded_competitors),
+                "top50_competitors_min": request.top50_competitors_min,
+                "main_max_pages": request.main_max_pages,
+                "competitors_max_pages": request.competitors_max_pages,
+                "result_limit": request.result_limit,
+            },
+        }
+
         history_entry = models.AnalysisHistory(
             domain=request_domain,
             base=request.base,
-            data=result_data,
+            data=response_payload,
         )
         db.add(history_entry)
         db.commit()
@@ -163,9 +277,30 @@ async def analyze(
         raise HTTPException(status_code=500, detail=detail) from exc
 
 
-@app.get("/api/history")
+@app.get("/api/history", response_model=list[schemas.HistoryItem])
 async def get_history(db: Session = Depends(database.get_db)):
-    return db.query(models.AnalysisHistory).order_by(models.AnalysisHistory.created_at.desc()).all()
+    entries = db.query(models.AnalysisHistory).order_by(models.AnalysisHistory.created_at.desc()).all()
+    response = []
+    for entry in entries:
+        table_data = _extract_table_data(entry.data)
+        response.append(
+            {
+                "id": entry.id,
+                "domain": entry.domain,
+                "base": entry.base,
+                "created_at": entry.created_at.isoformat() if entry.created_at else "",
+                "rows_count": len(table_data),
+            }
+        )
+    return response
+
+
+@app.get("/api/history/{analysis_id}", response_model=schemas.AnalyzeResponse)
+async def get_history_item(analysis_id: int, db: Session = Depends(database.get_db)):
+    entry = db.query(models.AnalysisHistory).filter(models.AnalysisHistory.id == analysis_id).first()
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Analysis entry not found")
+    return _build_response_from_history_entry(entry)
 
 
 @app.get("/api/export/{analysis_id}")
@@ -173,16 +308,16 @@ async def export_analysis(analysis_id: int, db: Session = Depends(database.get_d
     entry = db.query(models.AnalysisHistory).filter(models.AnalysisHistory.id == analysis_id).first()
     if entry is None:
         raise HTTPException(status_code=404, detail="Analysis entry not found")
-    if not entry.data:
+    table_data = _extract_table_data(entry.data)
+    if not table_data:
         raise HTTPException(status_code=400, detail="Analysis entry has no data")
 
-    df = pd.DataFrame(entry.data)
+    df = pd.DataFrame(table_data)
     if df.empty:
         raise HTTPException(status_code=400, detail="Analysis entry has no rows to export")
 
     # Replace technical "101" position marker with "-" in exported position columns.
-    metric_columns = {"word", "[!Wordstat]", "competitors_top10_count", "opportunity_score"}
-    position_columns = [col for col in df.columns if col not in metric_columns]
+    position_columns = [col for col in df.columns if col not in METRIC_COLUMNS]
     for col in position_columns:
         numeric_series = pd.to_numeric(df[col], errors="coerce")
         df[col] = numeric_series.apply(

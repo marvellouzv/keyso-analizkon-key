@@ -627,3 +627,74 @@
 - Updated `frontend/src/components/ResultTable.tsx`.
 - Removed hardcoded `substring(...)+...` truncation for domain columns.
 - Domain headers now use CSS ellipsis based on actual column width (`overflow-hidden text-ellipsis whitespace-nowrap`), so expanding a column reveals the full domain.
+## [2026-04-23] - Competitor exclusion form and API refill logic
+- Added new request field `excluded_competitors` in `backend/schemas.py`.
+- Backend (`backend/main.py`) now supports exclusion algorithm for API competitors:
+  - fetches competitors from API,
+  - removes excluded domains,
+  - if not enough competitors remain, re-requests with larger limit,
+  - keeps API order and takes first N according to `competitors_limit`.
+- Excluded domains are also applied to final merged competitor list (including manual competitors).
+- Frontend (`frontend/src/App.tsx`):
+  - Added new textarea `Исключить конкуренты` to the right of `Конкуренты вручную`.
+  - Default exclusion list prefilled with marketplaces/classified domains requested by user.
+  - Sends `excluded_competitors` in `/api/analyze` payload.
+- Validation:
+  - Backend syntax parse check passed.
+  - Frontend `npm run build` passed.
+- Runtime:
+  - Backend restarted in hidden mode on port `8000` with updated logic.
+- Note: Exclusion list now supports default marketplace domains and API refill selection order.
+## [2026-04-23] - History modal with saved analyses restore
+- Added persistent analysis snapshot storage in backend history records (`analysis_history.data` now stores full payload for new analyses).
+- Backend updates (`backend/main.py`, `backend/schemas.py`):
+  - `GET /api/history` now returns compact list items (`id`, `domain`, `base`, `created_at`, `rows_count`).
+  - Added `GET /api/history/{analysis_id}` to restore full analysis payload for UI.
+  - Added backward compatibility for old history rows where `data` contains only table rows list.
+  - Export endpoint now supports both old and new history data formats.
+- Frontend updates (`frontend/src/App.tsx`):
+  - Added `История` link in header, aligned right on `h1` line.
+  - Added history modal with domain filter field and list of saved checks.
+  - Added restore action per row to load saved analysis back into interface.
+  - Restored item updates domain/base in form and renders saved tables/diagnostics/stages.
+- Validation:
+  - Backend syntax parse passed.
+  - Frontend build passed.
+  - Runtime check: `/api/status`, `/api/history`, and frontend route respond successfully.
+## [2026-04-23] - History restore fallback for legacy backend
+- Frontend (`frontend/src/App.tsx`) now supports restoring history even when backend does not expose `/api/history/{id}`.
+- On restore 404, UI falls back to data from `/api/history` item payload (`data`) and reconstructs analysis in-browser.
+- Added normalization for mixed history formats (new compact rows + legacy full rows).
+- Frontend rebuilt and restarted in hidden mode.
+## [2026-04-23] - History control styled as button
+- Updated header control `История` in `frontend/src/App.tsx` from text-link style to button style consistent with other UI controls.
+
+## Date
+2026-04-30
+
+## Summary of Changes
+- Added production-ready Docker deployment files for server launch via Docker Compose.
+- Added backend container build that also compiles frontend and serves it through FastAPI static files.
+- Documented server deployment flow for STUDENT environment and GitHub-to-server setup.
+
+## Files Changed
+- `docker-compose.yml`
+- `backend/Dockerfile`
+- `backend/.env.example`
+- `.env.example`
+- `README.md`
+- `handoff.md`
+
+## Risks / Known Issues
+- `backend/.env` must be created manually on server and contain a valid `KEYSO_TOKEN`; without it `/api/analyze` returns `500`.
+- Current backend uses SQLite in temp directory (`/tmp` inside container), so history data is not durable across container recreation.
+- `APP_PORT` must match the student's assigned port from server instructions.
+
+## Validation Performed
+- Verified added Docker files and compose mapping format: `127.0.0.1:${APP_PORT:-8101}:8000`.
+- Verified README now includes deployment and verification commands for server workflow.
+
+## Next Steps
+- On server, clone repo in `/srv/seovibe/<user>/app`, create `.env` files, run `docker compose up -d --build`.
+- Run smoke checks: `docker compose ps`, `curl -i http://127.0.0.1:<port>/api/status`, then open external student URL.
+- Optionally add a persistent volume and stable DB path for long-term history retention.

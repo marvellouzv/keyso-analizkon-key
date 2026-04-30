@@ -8,6 +8,7 @@ class AnalyzeRequest(BaseModel):
     base: str
     competitors_limit: int = Field(default=10, ge=0, le=20)
     manual_competitors: List[str] = Field(default_factory=list)
+    excluded_competitors: List[str] = Field(default_factory=list)
     competitors_top_pos: int = Field(default=10, ge=3, le=50)
     top50_competitors_min: int = Field(default=3, ge=1, le=20)
     main_min_pos: int = Field(default=10, ge=1, le=100)
@@ -24,3 +25,11 @@ class AnalyzeResponse(BaseModel):
     table_pool_data: List[Dict]
     diagnostics: Dict[str, int]
     stage_results: Dict[str, List[Dict]]
+
+
+class HistoryItem(BaseModel):
+    id: int
+    domain: str
+    base: str
+    created_at: str
+    rows_count: int

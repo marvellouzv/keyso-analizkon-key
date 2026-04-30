@@ -31,6 +31,40 @@
 2. Установите зависимости: `npm install`.
 3. Запустите проект: `npm run dev`. Приложение откроется по адресу `http://localhost:5173`.
 
+## Docker Compose (серверный запуск)
+
+Проект можно поднять одной командой через Docker Compose:
+
+1. Скопируйте переменные окружения:
+   - `cp .env.example .env` (или создайте `.env` с `APP_PORT`)
+   - `cp backend/.env.example backend/.env` (и заполните `KEYSO_TOKEN`)
+2. Запустите:
+   - `docker compose up -d --build`
+3. Проверьте:
+   - `docker compose ps`
+   - `curl -i http://127.0.0.1:<APP_PORT>/api/status`
+
+Важно для серверной инструкции STUDENT:
+- Публикуйте только `127.0.0.1:<your-port>:8000` (не `0.0.0.0`).
+- Используйте только свой порт (например `8101` для VB, `8102` для NB и т.д.).
+- Не коммитьте `backend/.env` с реальным токеном.
+
+## Привязка GitHub -> сервер (кратко)
+
+На сервере в своей директории `/srv/seovibe/<user>/app`:
+
+1. Клонирование:
+   - `git clone <your-github-repo-url> .`
+2. Подготовка окружения:
+   - `cp .env.example .env`
+   - `cp backend/.env.example backend/.env`
+3. Запуск:
+   - `docker compose up -d --build`
+
+После деплоя проверьте:
+- локально на сервере: `curl -i http://127.0.0.1:<your-port>/api/status`
+- снаружи: `https://<your-domain>`
+
 ## Структура проекта
 - `backend/services/keys_so.py` — логика взаимодействия с API и контроль лимитов.
 - `backend/services/analyzer.py` — обработка данных через Pandas (сведение таблиц).

@@ -58,6 +58,15 @@ type AnalyzeResponse = {
   stage_results: Record<string, Array<Record<string, number | string>>>;
 };
 
+type HistoryItem = {
+  id: number;
+  domain: string;
+  base: string;
+  created_at: string;
+  rows_count: number;
+  data?: unknown;
+};
+
 type ParseSettings = {
   competitorsLimit: number;
   mainMaxPages: number;
@@ -103,6 +112,20 @@ const PRESET_OPTIONS: Array<{ id: string; label: string; settings: ParseSettings
     },
   },
 ];
+
+const DEFAULT_EXCLUDED_COMPETITORS_INPUT = [
+  "ozon.ru",
+  "wildberries.ru",
+  "market.yandex.ru",
+  "megamarket.ru",
+  "aliexpress.ru",
+  "goods.ru",
+  "lamoda.ru",
+  "kazan.express",
+  "price.ru",
+  "avito.ru",
+  "youla.ru",
+].join("\n");
 
 const VISUAL_THEME_OPTIONS: Array<{ id: VisualThemeId; label: string; description: string }> = [
   {
@@ -179,7 +202,7 @@ function extractApiErrorMessage(err: any): string {
 function parseManualCompetitorsInput(value: string): string[] {
   const lines = value
     .split(/\r?\n/)
-    .map((line) => line.trim().toLowerCase())
+    .map((line) => normalizeDomainInput(line))
     .filter(Boolean);
   return Array.from(new Set(lines));
 }
@@ -200,9 +223,74 @@ function normalizeDomainInput(value: string): string {
   return domain;
 }
 
+function buildAnalyzeResponseFromHistoryItem(item: HistoryItem): AnalyzeResponse | null {
+  const payload = item.data;
+  if (!payload) {
+    return null;
+  }
+
+  const metricColumns = new Set(["word", "[!Wordstat]", "competitors_top10_count", "opportunity_score"]);
+  if (Array.isArray(payload)) {
+    const tableData = payload as Array<Record<string, number | string>>;
+    const first = tableData[0] ?? {};
+    const competitors = Object.keys(first).filter((key) => !metricColumns.has(key) && key !== item.domain);
+    return {
+      analysis_id: item.id,
+      domain: item.domain,
+      competitors,
+      table_data: tableData,
+      table_pool_data: tableData,
+      diagnostics: {
+        main_keywords_raw: tableData.length,
+        main_keywords_unique: tableData.length,
+        after_join: tableData.length,
+        after_main_position_filter: tableData.length,
+        after_competitor_filter: tableData.length,
+        final_output: tableData.length,
+      },
+      stage_results: {},
+    };
+  }
+
+  if (typeof payload === "object" && payload !== null) {
+    const p = payload as Record<string, unknown>;
+    const tableData = (p.table_data as Array<Record<string, number | string>>) ?? [];
+    const tablePoolData = (p.table_pool_data as Array<Record<string, number | string>>) ?? tableData;
+    const diagnostics = (p.diagnostics as AnalyzeResponse["diagnostics"]) ?? {
+      main_keywords_raw: tableData.length,
+      main_keywords_unique: tableData.length,
+      after_join: tableData.length,
+      after_main_position_filter: tableData.length,
+      after_competitor_filter: tableData.length,
+      final_output: tableData.length,
+    };
+    const stageResults = (p.stage_results as AnalyzeResponse["stage_results"]) ?? {};
+    const competitors = (p.competitors as string[]) ?? [];
+    const domain = (p.domain as string) ?? item.domain;
+    return {
+      analysis_id: item.id,
+      domain,
+      competitors,
+      table_data: tableData,
+      table_pool_data: tablePoolData,
+      diagnostics,
+      stage_results: stageResults,
+    };
+  }
+
+  return null;
+}
+
 function AnalyzerApp() {
   const { domain, region, setDomain, setRegion } = useStore();
   const [statusLogs, setStatusLogs] = React.useState<string[]>([]);
+  const [activeAnalysis, setActiveAnalysis] = React.useState<AnalyzeResponse | null>(null);
+  const [historyOpen, setHistoryOpen] = React.useState(false);
+  const [historyLoading, setHistoryLoading] = React.useState(false);
+  const [historyRestoreLoadingId, setHistoryRestoreLoadingId] = React.useState<number | null>(null);
+  const [historyError, setHistoryError] = React.useState<string | null>(null);
+  const [historyItems, setHistoryItems] = React.useState<HistoryItem[]>([]);
+  const [historyFilter, setHistoryFilter] = React.useState("");
   const [settings, setSettings] = React.useState<ParseSettings>({
     competitorsLimit: 10,
     mainMaxPages: 10,
@@ -217,12 +305,17 @@ function AnalyzerApp() {
   const [tableResultLimit, setTableResultLimit] = React.useState<number>(500);
   const [tableTop50CompetitorsMin, setTableTop50CompetitorsMin] = React.useState<number>(3);
   const [manualCompetitorsInput, setManualCompetitorsInput] = React.useState<string>("");
+  const [excludedCompetitorsInput, setExcludedCompetitorsInput] = React.useState<string>(DEFAULT_EXCLUDED_COMPETITORS_INPUT);
   const [visualTheme, setVisualTheme] = React.useState<VisualThemeId>("clean");
   const [copySuccessVisible, setCopySuccessVisible] = React.useState<boolean>(false);
   const copySuccessTimeoutRef = React.useRef<number | null>(null);
   const manualCompetitors = React.useMemo(
     () => parseManualCompetitorsInput(manualCompetitorsInput),
     [manualCompetitorsInput],
+  );
+  const excludedCompetitors = React.useMemo(
+    () => parseManualCompetitorsInput(excludedCompetitorsInput),
+    [excludedCompetitorsInput],
   );
   const requiresManualCompetitors = settings.competitorsLimit === 0 && manualCompetitors.length === 0;
 
@@ -253,6 +346,7 @@ function AnalyzerApp() {
         base: region,
         competitors_limit: settings.competitorsLimit,
         manual_competitors: manualCompetitors,
+        excluded_competitors: excludedCompetitors,
         top50_competitors_min: settings.top50CompetitorsMin,
         main_max_pages: settings.mainMaxPages,
         competitors_max_pages: settings.competitorsMaxPages,
@@ -262,11 +356,93 @@ function AnalyzerApp() {
       addLog("Данные успешно получены.");
       return res.data;
     },
+    onSuccess: (data) => {
+      setActiveAnalysis(data);
+    },
     onError: (err: any) => {
       const errorMsg = extractApiErrorMessage(err);
       addLog(`ОШИБКА: ${errorMsg}`);
     },
   });
+
+  const analysisData = activeAnalysis ?? mutation.data ?? null;
+
+  const loadHistory = React.useCallback(async () => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const res = await axios.get<any[]>("/api/history");
+      const normalized: HistoryItem[] = (res.data ?? []).map((item: any) => {
+        const data = item?.data;
+        const rowsCount =
+          typeof item?.rows_count === "number"
+            ? item.rows_count
+            : Array.isArray(data)
+              ? data.length
+              : Array.isArray(data?.table_data)
+                ? data.table_data.length
+                : 0;
+        return {
+          id: Number(item?.id ?? 0),
+          domain: String(item?.domain ?? ""),
+          base: String(item?.base ?? ""),
+          created_at: String(item?.created_at ?? ""),
+          rows_count: rowsCount,
+          data,
+        };
+      });
+      setHistoryItems(normalized.filter((item) => item.id > 0));
+    } catch (err: any) {
+      setHistoryError(extractApiErrorMessage(err));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  const openHistory = React.useCallback(async () => {
+    setHistoryOpen(true);
+    await loadHistory();
+  }, [loadHistory]);
+
+  const restoreHistoryItem = React.useCallback(
+    async (item: HistoryItem) => {
+      setHistoryRestoreLoadingId(item.id);
+      setHistoryError(null);
+      try {
+        const res = await axios.get<AnalyzeResponse>(`/api/history/${item.id}`);
+        setActiveAnalysis(res.data);
+        setDomain(item.domain);
+        setRegion(item.base);
+        setHistoryOpen(false);
+        addLog(`Восстановлен анализ #${item.id} для ${item.domain}`);
+      } catch (err: any) {
+        const status = err?.response?.status;
+        if (status === 404) {
+          const fallback = buildAnalyzeResponseFromHistoryItem(item);
+          if (fallback) {
+            setActiveAnalysis(fallback);
+            setDomain(item.domain);
+            setRegion(item.base);
+            setHistoryOpen(false);
+            addLog(`Восстановлен анализ #${item.id} для ${item.domain}`);
+            return;
+          }
+        }
+        setHistoryError(extractApiErrorMessage(err));
+      } finally {
+        setHistoryRestoreLoadingId(null);
+      }
+    },
+    [addLog, setDomain, setRegion],
+  );
+
+  const filteredHistoryItems = React.useMemo(() => {
+    const query = historyFilter.trim().toLowerCase();
+    if (!query) {
+      return historyItems;
+    }
+    return historyItems.filter((item) => item.domain.toLowerCase().includes(query));
+  }, [historyFilter, historyItems]);
 
   React.useEffect(() => {
     if (!mutation.isPending) {
@@ -302,13 +478,13 @@ function AnalyzerApp() {
   }, [mutation.isPending]);
 
   const chartData = React.useMemo(() => {
-    if (!mutation.data) {
+    if (!analysisData) {
       return [];
     }
 
-    const analyzedDomain = mutation.data.domain;
-    return mutation.data.competitors.map((competitor) => {
-      const common = mutation.data.table_data.filter((row) => {
+    const analyzedDomain = analysisData.domain;
+    return analysisData.competitors.map((competitor) => {
+      const common = analysisData.table_data.filter((row) => {
         const mainPos = Number(row[analyzedDomain] ?? 101);
         const compPos = Number(row[competitor] ?? 101);
         return mainPos <= 100 && compPos <= 100;
@@ -319,19 +495,19 @@ function AnalyzerApp() {
         common,
       };
     });
-  }, [mutation.data]);
+  }, [analysisData]);
 
   const tableFilteredData = React.useMemo(() => {
-    if (!mutation.data) {
+    if (!analysisData) {
       return [];
     }
 
-    const analyzedDomain = mutation.data.domain;
-    const allCompetitors = mutation.data.competitors;
+    const analyzedDomain = analysisData.domain;
+    const allCompetitors = analysisData.competitors;
     const sourceRows =
-      mutation.data.table_pool_data && mutation.data.table_pool_data.length > 0
-        ? mutation.data.table_pool_data
-        : mutation.data.table_data;
+      analysisData.table_pool_data && analysisData.table_pool_data.length > 0
+        ? analysisData.table_pool_data
+        : analysisData.table_data;
 
     const prepared: Array<Record<string, number | string>> = sourceRows
       .filter((row) => {
@@ -401,17 +577,17 @@ function AnalyzerApp() {
       });
 
     return prepared.slice(0, tableResultLimit);
-  }, [mutation.data, tableCompetitorsTopPos, tableMainMinPos, tableResultLimit, tableTop50CompetitorsMin]);
+  }, [analysisData, tableCompetitorsTopPos, tableMainMinPos, tableResultLimit, tableTop50CompetitorsMin]);
 
   const hasTablePoolData = React.useMemo(() => {
-    return Boolean(mutation.data?.table_pool_data && mutation.data.table_pool_data.length > 0);
-  }, [mutation.data]);
+    return Boolean(analysisData?.table_pool_data && analysisData.table_pool_data.length > 0);
+  }, [analysisData]);
 
   const visibleCompetitors = React.useMemo(() => {
-    if (!mutation.data) {
+    if (!analysisData) {
       return [];
     }
-    const competitorStats = mutation.data.competitors
+    const competitorStats = analysisData.competitors
       .map((competitor) => {
         const foundCount = tableFilteredData.reduce((acc, row) => {
           const pos = Number(row[competitor] ?? 101);
@@ -428,10 +604,10 @@ function AnalyzerApp() {
       });
 
     return competitorStats.map((item) => item.competitor);
-  }, [mutation.data, tableFilteredData]);
+  }, [analysisData, tableFilteredData]);
 
   const copyTableToClipboard = React.useCallback(async () => {
-    if (!mutation.data) {
+    if (!analysisData) {
       return;
     }
 
@@ -440,7 +616,7 @@ function AnalyzerApp() {
       "[!Wordstat]",
       "competitors_top10_count",
       "opportunity_score",
-      mutation.data.domain,
+      analysisData.domain,
       ...visibleCompetitors,
     ];
 
@@ -526,7 +702,7 @@ function AnalyzerApp() {
         setCopySuccessVisible(false);
       }
     }
-  }, [addLog, mutation.data, tableFilteredData, visibleCompetitors]);
+  }, [addLog, analysisData, tableFilteredData, visibleCompetitors]);
 
   React.useEffect(() => {
     return () => {
@@ -562,7 +738,16 @@ function AnalyzerApp() {
     <div className={`theme-shell theme-${visualTheme} min-h-screen bg-slate-50 p-4 md:p-8`}>
       <div className="mx-auto max-w-6xl">
         <header className="mb-10">
-          <h1 className="app-title mb-2 text-4xl font-extrabold text-slate-900">SEO Keys.so Analyzer</h1>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h1 className="app-title text-4xl font-extrabold text-slate-900">SEO Keys.so Analyzer</h1>
+            <button
+              type="button"
+              onClick={openHistory}
+              className="app-preset-chip app-preset-chip-idle rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100"
+            >
+              История
+            </button>
+          </div>
           <p className="app-subtitle text-slate-500">Анализ видимости домена и сравнение с конкурентами</p>
         </header>
 
@@ -741,24 +926,39 @@ function AnalyzerApp() {
                 </select>
               </label>
 
-              <label className="text-sm text-slate-700 md:col-span-2 xl:col-span-4">
-                <FieldLabel
-                  text="Конкуренты вручную"
-                  hint="По одному домену в строке. Эти домены будут добавлены к конкурентам из API."
-                />
-                <textarea
-                  rows={5}
-                  className="app-input mt-1 h-[120px] w-full resize-y overflow-y-auto rounded-md border border-slate-300 bg-white p-2 font-mono text-sm"
-                  placeholder={"example-competitor.ru\nanother-site.ru"}
-                  value={manualCompetitorsInput}
-                  onChange={(e) => setManualCompetitorsInput(e.target.value)}
-                />
-                {requiresManualCompetitors && (
-                  <p className="mt-1 text-xs text-red-600">
-                    При значении `Количество конкурентов = 0` добавьте хотя бы один домен вручную.
-                  </p>
-                )}
-              </label>
+              <div className="grid grid-cols-1 gap-3 md:col-span-2 md:grid-cols-2 xl:col-span-4">
+                <label className="text-sm text-slate-700">
+                  <FieldLabel
+                    text="Конкуренты вручную"
+                    hint="По одному домену в строке. Эти домены будут добавлены к конкурентам из API."
+                  />
+                  <textarea
+                    rows={5}
+                    className="app-input mt-1 h-[120px] w-full resize-y overflow-y-auto rounded-md border border-slate-300 bg-white p-2 font-mono text-sm"
+                    placeholder={"example-competitor.ru\nanother-site.ru"}
+                    value={manualCompetitorsInput}
+                    onChange={(e) => setManualCompetitorsInput(e.target.value)}
+                  />
+                  {requiresManualCompetitors && (
+                    <p className="mt-1 text-xs text-red-600">
+                      При значении `Количество конкурентов = 0` добавьте хотя бы один домен вручную.
+                    </p>
+                  )}
+                </label>
+
+                <label className="text-sm text-slate-700">
+                  <FieldLabel
+                    text="Исключить конкуренты"
+                    hint="По одному домену в строке. Эти домены будут исключены из списка API-конкурентов, и система доберет следующий подходящий домен."
+                  />
+                  <textarea
+                    rows={5}
+                    className="app-input mt-1 h-[120px] w-full resize-y overflow-y-auto rounded-md border border-slate-300 bg-white p-2 font-mono text-sm"
+                    value={excludedCompetitorsInput}
+                    onChange={(e) => setExcludedCompetitorsInput(e.target.value)}
+                  />
+                </label>
+              </div>
 
             </div>
           </div>
@@ -806,7 +1006,7 @@ function AnalyzerApp() {
           )}
         </AnimatePresence>
 
-        {mutation.data && !mutation.isPending && (
+        {analysisData && !mutation.isPending && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
               <div className="app-card app-density-pad rounded-xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
@@ -839,7 +1039,7 @@ function AnalyzerApp() {
                   </div>
                   <div className="app-summary-secondary rounded-lg bg-green-50 p-4">
                     <p className="text-sm font-medium text-green-600">Найдено конкурентов</p>
-                    <p className="text-2xl font-bold text-green-900">{mutation.data.competitors.length}</p>
+                    <p className="text-2xl font-bold text-green-900">{analysisData.competitors.length}</p>
                   </div>
                 </div>
               </div>
@@ -855,7 +1055,7 @@ function AnalyzerApp() {
                       hint="Количество записей ключей, полученных от Keys.so для исследуемого домена до нормализации и удаления дублей."
                     />
                   </p>
-                  <p className="text-xl font-bold text-slate-900">{mutation.data.diagnostics.main_keywords_raw}</p>
+                  <p className="text-xl font-bold text-slate-900">{analysisData.diagnostics.main_keywords_raw}</p>
                 </div>
                 <div className="rounded-lg bg-slate-50 p-3">
                   <p className="text-xs text-slate-500">
@@ -864,7 +1064,7 @@ function AnalyzerApp() {
                       hint="Количество уникальных запросов после группировки по слову и выбора лучшей позиции сайта."
                     />
                   </p>
-                  <p className="text-xl font-bold text-slate-900">{mutation.data.diagnostics.main_keywords_unique}</p>
+                  <p className="text-xl font-bold text-slate-900">{analysisData.diagnostics.main_keywords_unique}</p>
                 </div>
                 <div className="rounded-lg bg-slate-50 p-3">
                   <p className="text-xs text-slate-500">
@@ -873,7 +1073,7 @@ function AnalyzerApp() {
                       hint="Количество строк после присоединения колонок позиций конкурентов к запросам исследуемого сайта."
                     />
                   </p>
-                  <p className="text-xl font-bold text-slate-900">{mutation.data.diagnostics.after_join}</p>
+                  <p className="text-xl font-bold text-slate-900">{analysisData.diagnostics.after_join}</p>
                 </div>
                 <div className="rounded-lg bg-slate-50 p-3">
                   <p className="text-xs text-slate-500">
@@ -882,7 +1082,7 @@ function AnalyzerApp() {
                       hint="Сколько строк осталось после фильтра по минимальной позиции исследуемого сайта."
                     />
                   </p>
-                  <p className="text-xl font-bold text-slate-900">{mutation.data.diagnostics.after_main_position_filter}</p>
+                  <p className="text-xl font-bold text-slate-900">{analysisData.diagnostics.after_main_position_filter}</p>
                 </div>
                 <div className="rounded-lg bg-slate-50 p-3">
                   <p className="text-xs text-slate-500">
@@ -891,7 +1091,7 @@ function AnalyzerApp() {
                       hint="Сколько строк осталось после условия: хотя бы один конкурент попадает в заданный топ по позиции."
                     />
                   </p>
-                  <p className="text-xl font-bold text-slate-900">{mutation.data.diagnostics.after_competitor_filter}</p>
+                  <p className="text-xl font-bold text-slate-900">{analysisData.diagnostics.after_competitor_filter}</p>
                 </div>
                 <div className="rounded-lg bg-blue-50 p-3">
                   <p className="text-xs text-blue-600">
@@ -900,7 +1100,7 @@ function AnalyzerApp() {
                       hint="Финальное количество строк после сортировки и ограничения result_limit."
                     />
                   </p>
-                  <p className="text-xl font-bold text-blue-900">{mutation.data.diagnostics.final_output}</p>
+                  <p className="text-xl font-bold text-blue-900">{analysisData.diagnostics.final_output}</p>
                 </div>
               </div>
             </div>
@@ -909,7 +1109,7 @@ function AnalyzerApp() {
               <h3 className="mb-4 text-lg font-semibold">Результаты по стадиям</h3>
               <div className="space-y-3">
                 {stageOrder.map((stageKey) => {
-                  const rows = mutation.data.stage_results?.[stageKey] ?? [];
+                  const rows = analysisData.stage_results?.[stageKey] ?? [];
                   const isOpen = openedStage === stageKey;
                   const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
                   return (
@@ -971,7 +1171,7 @@ function AnalyzerApp() {
                     </span>
                   )}
                   <button
-                    onClick={() => window.open(`/api/export/${mutation.data?.analysis_id}`, "_blank")}
+                    onClick={() => window.open(`/api/export/${analysisData?.analysis_id}`, "_blank")}
                     className="app-link text-sm font-medium text-blue-600 hover:underline"
                   >
                     Скачать Excel
@@ -1023,11 +1223,89 @@ function AnalyzerApp() {
               </div>
               <ResultTable
                 data={tableFilteredData}
-                domains={[mutation.data.domain, ...visibleCompetitors]}
+                domains={[analysisData.domain, ...visibleCompetitors]}
                 variant={visualTheme}
               />
             </div>
           </motion.div>
+        )}
+
+        {historyOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+            <div className="app-card w-full max-w-3xl rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h3 className="text-lg font-semibold text-slate-900">История анализов</h3>
+                <button
+                  type="button"
+                  onClick={() => setHistoryOpen(false)}
+                  className="rounded border border-slate-300 px-2 py-1 text-sm text-slate-600 hover:bg-slate-100"
+                >
+                  Закрыть
+                </button>
+              </div>
+
+              <div className="mb-3 flex gap-2">
+                <input
+                  className="app-input w-full rounded-md border border-slate-300 bg-white p-2 text-sm"
+                  placeholder="Фильтр по домену..."
+                  value={historyFilter}
+                  onChange={(e) => setHistoryFilter(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={loadHistory}
+                  className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                >
+                  Обновить
+                </button>
+              </div>
+
+              {historyLoading && <p className="text-sm text-slate-500">Загружаем историю...</p>}
+              {historyError && <p className="mb-2 text-sm text-red-600">ОШИБКА: {historyError}</p>}
+
+              {!historyLoading && (
+                <div className="max-h-[420px] overflow-y-auto rounded-md border border-slate-200">
+                  {filteredHistoryItems.length === 0 ? (
+                    <p className="p-4 text-sm text-slate-500">Записей не найдено.</p>
+                  ) : (
+                    <table className="w-full border-collapse text-left text-sm">
+                      <thead className="sticky top-0 bg-slate-50">
+                        <tr className="border-b border-slate-200">
+                          <th className="p-3 font-semibold text-slate-700">Домен</th>
+                          <th className="p-3 font-semibold text-slate-700">База</th>
+                          <th className="p-3 font-semibold text-slate-700">Строк</th>
+                          <th className="p-3 font-semibold text-slate-700">Дата</th>
+                          <th className="p-3 font-semibold text-slate-700">Действие</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredHistoryItems.map((item) => (
+                          <tr key={item.id} className="border-b border-slate-100">
+                            <td className="p-3 font-medium text-slate-900">{item.domain}</td>
+                            <td className="p-3 text-slate-700">{item.base}</td>
+                            <td className="p-3 text-slate-700">{item.rows_count}</td>
+                            <td className="p-3 text-slate-700">
+                              {item.created_at ? new Date(item.created_at).toLocaleString() : "-"}
+                            </td>
+                            <td className="p-3">
+                              <button
+                                type="button"
+                                disabled={historyRestoreLoadingId === item.id}
+                                onClick={() => restoreHistoryItem(item)}
+                                className="app-btn-primary rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                              >
+                                {historyRestoreLoadingId === item.id ? "Восстанавливаем..." : "Восстановить"}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </div>
