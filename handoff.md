@@ -698,3 +698,160 @@
 - On server, clone repo in `/srv/seovibe/<user>/app`, create `.env` files, run `docker compose up -d --build`.
 - Run smoke checks: `docker compose ps`, `curl -i http://127.0.0.1:<port>/api/status`, then open external student URL.
 - Optionally add a persistent volume and stable DB path for long-term history retention.
+
+## Date
+2026-05-13
+
+## Summary of Changes
+- Added an isolated authorization module under `backend/auth_module` with plug-in style integration to FastAPI via middleware and dedicated auth routes.
+- Implemented secure 30-day session cookies and login page flow without modifying existing business endpoints/controllers.
+- Added security controls: brute-force protection (rate limiting on login attempts), CSRF token generation/validation, output escaping in HTML template, and password hashing with bcrypt.
+- Added default funny seed user for test login.
+
+## Files Changed
+- `backend/main.py`
+- `backend/requirements.txt`
+- `backend/auth_module/__init__.py`
+- `backend/auth_module/config.py`
+- `backend/auth_module/integration.py`
+- `backend/auth_module/middleware.py`
+- `backend/auth_module/models.py`
+- `backend/auth_module/routes.py`
+- `backend/auth_module/security.py`
+- `backend/auth_module/service.py`
+- `backend/auth_module/templates.py`
+- `README.md`
+- `handoff.md`
+
+## Risks / Known Issues
+- Auth middleware currently protects `/` and `/api*` paths; if public API endpoints are needed, add them to `excluded_paths` in auth config.
+- Cookie `Secure` is enabled only when request is HTTPS (or `X-Forwarded-Proto: https`), so local HTTP development keeps cookie usable but less strict.
+- Seed user credentials are static and for demo only; they must be replaced in production.
+
+## Validation Performed
+- Backend syntax check: `python -m compileall backend` passed.
+- App import smoke test from backend: `from main import app` succeeded.
+
+## Next Steps
+- Run backend and verify full login flow in browser: `/auth/login` -> submit -> access `/` and `/api/*`.
+- Replace seed credentials with environment-driven provisioning for production.
+- Optionally add role/permission support if selective endpoint protection is required.
+
+## Date
+2026-05-13
+
+## Summary of Changes
+- Updated default seed credentials in auth module per request (values intentionally not documented in handoff).
+
+## Files Changed
+- `backend/auth_module/service.py`
+- `README.md`
+- `handoff.md`
+
+## Risks / Known Issues
+- Credentials are hardcoded for local/test bootstrap and must not be documented in plaintext.
+- Existing previously created seed user in DB is not auto-renamed; for immediate effect on old DB, clear `auth_users` table or rotate user manually.
+
+## Validation Performed
+- Verified credential constants updated in source and removed plaintext credentials from docs.
+
+## Next Steps
+- Restart backend to apply updated seed logic.
+- If old seed user already exists in DB, delete it and let module recreate user on startup.
+
+## Date
+2026-05-13
+
+## Summary of Changes
+- Sanitized documentation by removing explicit auth login/password from `README.md`.
+- Kept authorization system documentation (architecture, protections, cookie policy) without exposing credentials.
+
+## Files Changed
+- `README.md`
+- `handoff.md`
+
+## Risks / Known Issues
+- Seed credentials still exist in source code for bootstrap and should be moved to env-based provisioning for production.
+
+## Validation Performed
+- Checked `README.md` now documents auth module behavior without plaintext credentials.
+
+## Next Steps
+- Move seed user provisioning to environment variables and remove hardcoded defaults from code.
+
+## Date
+2026-05-13
+
+## Summary of Changes
+- Switched auth seed provisioning to environment-driven mode with support for bcrypt hash input.
+- Added `AUTH_SEED_USERNAME`, `AUTH_SEED_PASSWORD_HASH`, and optional `AUTH_SEED_PASSWORD` to backend env example.
+- Updated README with explicit secure setup flow and hash generation command.
+
+## Files Changed
+- `backend/auth_module/service.py`
+- `backend/.env.example`
+- `README.md`
+- `handoff.md`
+
+## Risks / Known Issues
+- If `auth_users` already contains the seed user, changing env credentials does not overwrite existing DB row automatically.
+- Plaintext `AUTH_SEED_PASSWORD` is still supported as fallback; production should use hash only.
+
+## Validation Performed
+- Python compile check passed for backend after changes.
+- Verified docs now describe env-based secure credential setup.
+
+## Next Steps
+- Set `AUTH_SEED_USERNAME` and `AUTH_SEED_PASSWORD_HASH` in `backend/.env`.
+- Remove or rotate existing `auth_users` seed entry if credential change should take effect immediately.
+
+## Date
+2026-05-13
+
+## Summary of Changes
+- Removed utility script `set_auth_user.py` per request.
+- Removed script references from project documentation.
+- Wrote actual auth seed credentials configuration to `backend/.env` using login + bcrypt hash.
+
+## Files Changed
+- `backend/.env`
+- `README.md`
+- `handoff.md`
+- `scripts/set_auth_user.py` (deleted)
+
+## Risks / Known Issues
+- Existing DB user rows are not automatically overwritten just by changing `.env`; if user already exists in `auth_users`, rotate/update DB row manually.
+- `backend/.env` contains sensitive auth settings and must never be committed.
+
+## Validation Performed
+- Verified no `set_auth_user.py` mentions remain in markdown docs.
+- Verified `backend/.env` now includes `AUTH_SEED_USERNAME` and `AUTH_SEED_PASSWORD_HASH`.
+
+## Next Steps
+- Restart backend so env changes are applied to new bootstrap runs.
+- If old auth user exists, remove/update corresponding row in `auth_users`.
+
+## Date
+2026-05-13
+
+## Summary of Changes
+- Added a dedicated deployment runbook for the actual working flow: local push to GitHub, SSH login, server-side update, and service restart.
+- Linked the new runbook from `README.md` so it is discoverable from the main docs.
+
+## Files Changed
+- `DEPLOY_GUIDE.md`
+- `README.md`
+- `handoff.md`
+
+## Risks / Known Issues
+- The guide assumes deployment path `/srv/seovibe/vb/repos/keyso-analizkon-key` and alias `ssh seovb`; if paths/alias change, commands must be adjusted.
+- Deploy script health-check can briefly fail during immediate container restart; a short retry is usually enough.
+
+## Validation Performed
+- Verified the deployment guide file is present with end-to-end commands.
+- Verified `README.md` references `DEPLOY_GUIDE.md`.
+
+## Next Steps
+- Optionally mirror the same deploy guide in a `docs/` directory if team documentation expands.
+- Keep commands in `DEPLOY_GUIDE.md` aligned with any future infra/path changes.
+

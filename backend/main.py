@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 import database
 import models
 import schemas
+from auth_module import AuthConfig, init_auth_module
 from services.analyzer import SEOAnalyzer
 from services.keys_so import KeysSoClient
 
@@ -20,6 +21,7 @@ load_dotenv()
 
 app = FastAPI(title="SEO Keys.so Analyzer")
 models.Base.metadata.create_all(bind=database.engine)
+init_auth_module(app, database.engine, AuthConfig())
 
 app.add_middleware(
     CORSMiddleware,

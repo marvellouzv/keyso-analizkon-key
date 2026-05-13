@@ -65,10 +65,41 @@
 - локально на сервере: `curl -i http://127.0.0.1:<your-port>/api/status`
 - снаружи: `https://<your-domain>`
 
+Подробная пошаговая инструкция (push -> сервер -> обновление -> перезапуск):
+- `DEPLOY_GUIDE.md`
+
 ## Структура проекта
 - `backend/services/keys_so.py` — логика взаимодействия с API и контроль лимитов.
 - `backend/services/analyzer.py` — обработка данных через Pandas (сведение таблиц).
 - `frontend/src/components/ResultTable.tsx` — компонент отображения данных с цветовой индикацией.
+- `backend/auth_module/` — изолированный модуль авторизации (middleware + роуты + сессии + CSRF/rate-limit).
+
+## Модуль авторизации (изолированный)
+
+- Точка входа: `backend/auth_module/integration.py`.
+- Подключение в приложение: `init_auth_module(app, database.engine, AuthConfig())`.
+- Защиты: CSRF-токен, ограничение попыток входа, bcrypt-хеши, ORM-запросы, HttpOnly/SameSite=Strict cookie.
+- Срок сессии: 30 дней (`Max-Age=2592000`).
+- Учётные данные по умолчанию не публикуются в документации. Для продакшена задавайте их через переменные окружения и ротацию.
+
+### Настройка логина/пароля через `.env` (рекомендуется)
+
+В `backend/.env`:
+
+```env
+AUTH_SEED_USERNAME=your_login
+AUTH_SEED_PASSWORD_HASH=$2b$12$...
+```
+
+Генерация bcrypt-хеша (PowerShell):
+
+```powershell
+python -c "import bcrypt; print(bcrypt.hashpw('YourStrongPass123!'.encode(), bcrypt.gensalt()).decode())"
+```
+
+Важно:
+- Лучше хранить именно `AUTH_SEED_PASSWORD_HASH`, а не открытый пароль.
+- `AUTH_SEED_PASSWORD` оставлен только как локальный fallback.
 
 ## Current Technical Status (2026-04-21)
 

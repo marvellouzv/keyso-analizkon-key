@@ -8,3 +8,5 @@ openpyxl
 python-dotenv
 pydantic
 pydantic-settings
+bcrypt
+python-multipart
