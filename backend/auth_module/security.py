@@ -1,4 +1,5 @@
 import html
+import hashlib
 import os
 import secrets
 from datetime import datetime, timedelta
@@ -7,7 +8,9 @@ import bcrypt
 
 
 def _password_payload(plain_password: str, pepper_hash: str) -> bytes:
-    return f"{plain_password}::{pepper_hash}".encode("utf-8")
+    # bcrypt accepts max 72-byte input. Pre-hash password+pepper to fixed-length bytes.
+    raw = f"{plain_password}::{pepper_hash}".encode("utf-8")
+    return hashlib.sha256(raw).digest()
 
 
 def get_password_pepper_hash() -> str:

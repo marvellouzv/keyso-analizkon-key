@@ -886,3 +886,26 @@
 - Optionally mirror the same deploy guide in a `docs/` directory if team documentation expands.
 - Keep commands in `DEPLOY_GUIDE.md` aligned with any future infra/path changes.
 
+## Date
+2026-05-13
+
+## Summary of Changes
+- Fixed auth runtime 500 on first login when `AUTH_PASSWORD_PEPPER_HASH` is long.
+- Updated password payload logic to SHA-256 pre-hash `password + pepper` before bcrypt, keeping bcrypt input length safe.
+
+## Files Changed
+- `backend/auth_module/security.py`
+- `handoff.md`
+
+## Risks / Known Issues
+- Existing password hashes from the previous pre-hash strategy become incompatible; with empty `auth_users` this is acceptable and expected.
+- If auth users already existed before the fix, password reset/re-init may be required.
+
+## Validation Performed
+- Reviewed server logs: previous error was `ValueError: password cannot be longer than 72 bytes`.
+- Applied fixed-length pre-hash mitigation in auth security module.
+
+## Next Steps
+- Deploy latest commit to server and retry first login flow via `/auth/login`.
+- If needed, clear auth tables once more and initialize first account again.
+
