@@ -87,19 +87,23 @@
 В `backend/.env`:
 
 ```env
-AUTH_SEED_USERNAME=your_login
-AUTH_SEED_PASSWORD_HASH=$2b$12$...
+AUTH_PASSWORD_PEPPER_HASH=your_random_secret_hash
 ```
 
-Генерация bcrypt-хеша (PowerShell):
+Механика:
+- Если таблица `auth_users` пуста, первые введенные в форме логин/пароль создают первого пользователя.
+- Пароль сохраняется в БД как bcrypt-хеш от связки `password + AUTH_PASSWORD_PEPPER_HASH`.
+- Если пользователь уже есть в БД, форма работает как обычный login.
+
+Генерация значения для `AUTH_PASSWORD_PEPPER_HASH` (PowerShell):
 
 ```powershell
-python -c "import bcrypt; print(bcrypt.hashpw('YourStrongPass123!'.encode(), bcrypt.gensalt()).decode())"
+python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
 Важно:
-- Лучше хранить именно `AUTH_SEED_PASSWORD_HASH`, а не открытый пароль.
-- `AUTH_SEED_PASSWORD` оставлен только как локальный fallback.
+- `AUTH_PASSWORD_PEPPER_HASH` должен быть длинным и случайным, хранить только в `backend/.env`.
+- После смены pepper-значения старые пароли в БД перестанут проходить проверку (потребуется сброс пользователя).
 
 ## Current Technical Status (2026-04-21)
 

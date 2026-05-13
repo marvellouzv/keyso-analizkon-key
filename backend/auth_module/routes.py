@@ -8,13 +8,16 @@ from .config import AuthConfig
 from .security import constant_time_equal, generate_token
 from .service import (
     authenticate_user,
+    create_first_user,
     create_session,
     delete_session,
+    has_any_user,
     is_locked,
     register_failed_attempt,
     reset_failed_attempts,
 )
 from .templates import login_page_html
+from .security import get_password_pepper_hash
 
 
 def _is_secure_request(request: Request) -> bool:
@@ -75,6 +78,37 @@ def build_auth_router(config: AuthConfig) -> APIRouter:
 
         db: Session = SessionLocal()
         try:
+            pepper_hash = get_password_pepper_hash()
+            if not pepper_hash:
+                return _login_response(
+                    request=request,
+                    csrf_token=generate_token(24),
+                    error="Server auth pepper is not configured.",
+                    status_code=500,
+                )
+
+            if not has_any_user(db):
+                user = create_first_user(db, username=username, password=password, pepper_hash=pepper_hash)
+                session = create_session(db, user, config)
+                response = RedirectResponse(url="/", status_code=303)
+                response.set_cookie(
+                    key=config.session_cookie_name,
+                    value=session.session_id,
+                    httponly=True,
+                    secure=_is_secure_request(request),
+                    samesite="strict",
+                    max_age=config.session_max_age_seconds,
+                )
+                response.set_cookie(
+                    key="auth_csrf",
+                    value=session.csrf_token,
+                    httponly=False,
+                    secure=_is_secure_request(request),
+                    samesite="strict",
+                    max_age=config.session_max_age_seconds,
+                )
+                return response
+
             if is_locked(db, username, client_ip):
                 return _login_response(
                     request=request,
@@ -83,7 +117,7 @@ def build_auth_router(config: AuthConfig) -> APIRouter:
                     status_code=429,
                 )
 
-            user = authenticate_user(db, username=username, password=password)
+            user = authenticate_user(db, username=username, password=password, pepper_hash=pepper_hash)
             if not user:
                 register_failed_attempt(db, username, client_ip, config)
                 return _login_response(

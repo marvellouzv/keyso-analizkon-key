@@ -1,5 +1,3 @@
-import os
-
 from sqlalchemy.orm import Session
 
 from .config import AuthConfig
@@ -7,37 +5,27 @@ from .models import AuthLoginAttempt, AuthSession, AuthUser
 from .security import (
     expires_in,
     generate_token,
-    hash_password,
     now_utc,
     verify_password,
+    hash_password,
 )
 
 
-def ensure_seed_user(db: Session) -> None:
-    username = (os.getenv("AUTH_SEED_USERNAME", "").strip() or "keysoha")
-    password_hash_env = (os.getenv("AUTH_SEED_PASSWORD_HASH", "").strip() or "")
-    password_plain_env = os.getenv("AUTH_SEED_PASSWORD", "").strip()
+def has_any_user(db: Session) -> bool:
+    return db.query(AuthUser.id).first() is not None
 
-    existing = db.query(AuthUser).filter(AuthUser.username == username).first()
-    if existing:
-        return
 
-    if password_hash_env:
-        password_hash = password_hash_env
-    elif password_plain_env:
-        password_hash = hash_password(password_plain_env)
-    else:
-        # Fallback for local bootstrap only. Prefer AUTH_SEED_PASSWORD_HASH in production.
-        password_hash = hash_password("K3y$0hA!9qLp")
-
+def create_first_user(db: Session, username: str, password: str, pepper_hash: str) -> AuthUser:
     user = AuthUser(
-        username=username,
-        password_hash=password_hash,
+        username=(username or "").strip(),
+        password_hash=hash_password(password, pepper_hash),
         is_active=True,
         created_at=now_utc(),
     )
     db.add(user)
     db.commit()
+    db.refresh(user)
+    return user
 
 
 def _attempt_key(username: str, client_ip: str) -> str:
@@ -78,11 +66,11 @@ def reset_failed_attempts(db: Session, username: str, client_ip: str) -> None:
     db.commit()
 
 
-def authenticate_user(db: Session, username: str, password: str) -> AuthUser | None:
+def authenticate_user(db: Session, username: str, password: str, pepper_hash: str) -> AuthUser | None:
     user = db.query(AuthUser).filter(AuthUser.username == (username or "").strip()).first()
     if not user or not user.is_active:
         return None
-    if not verify_password(password, user.password_hash):
+    if not verify_password(password, user.password_hash, pepper_hash):
         return None
     return user
 

@@ -1,18 +1,27 @@
 import html
+import os
 import secrets
 from datetime import datetime, timedelta
 
 import bcrypt
 
 
-def hash_password(plain_password: str) -> str:
-    hashed = bcrypt.hashpw(plain_password.encode("utf-8"), bcrypt.gensalt(rounds=12))
+def _password_payload(plain_password: str, pepper_hash: str) -> bytes:
+    return f"{plain_password}::{pepper_hash}".encode("utf-8")
+
+
+def get_password_pepper_hash() -> str:
+    return (os.getenv("AUTH_PASSWORD_PEPPER_HASH", "") or "").strip()
+
+
+def hash_password(plain_password: str, pepper_hash: str) -> str:
+    hashed = bcrypt.hashpw(_password_payload(plain_password, pepper_hash), bcrypt.gensalt(rounds=12))
     return hashed.decode("utf-8")
 
 
-def verify_password(plain_password: str, password_hash: str) -> bool:
+def verify_password(plain_password: str, password_hash: str, pepper_hash: str) -> bool:
     try:
-        return bcrypt.checkpw(plain_password.encode("utf-8"), password_hash.encode("utf-8"))
+        return bcrypt.checkpw(_password_payload(plain_password, pepper_hash), password_hash.encode("utf-8"))
     except ValueError:
         return False
 

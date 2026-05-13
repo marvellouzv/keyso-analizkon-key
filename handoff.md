@@ -835,6 +835,37 @@
 2026-05-13
 
 ## Summary of Changes
+- Reworked auth flow to remove seed credentials from env/bootstrap.
+- Added env-based password pepper hash (`AUTH_PASSWORD_PEPPER_HASH`) used during password hashing/verification.
+- Implemented first-login bootstrap behavior: when `auth_users` is empty, credentials submitted in login form create the first user.
+- Cleared auth tables (`auth_users`, `auth_sessions`, `auth_login_attempts`) and restarted backend.
+
+## Files Changed
+- `backend/auth_module/security.py`
+- `backend/auth_module/service.py`
+- `backend/auth_module/routes.py`
+- `backend/auth_module/integration.py`
+- `backend/.env.example`
+- `backend/.env`
+- `README.md`
+- `handoff.md`
+
+## Risks / Known Issues
+- Rotating `AUTH_PASSWORD_PEPPER_HASH` invalidates password verification for existing user hashes.
+- First submitted login credentials become the canonical first account when DB is empty.
+
+## Validation Performed
+- Cleared auth tables and confirmed `auth_users` count is `0`.
+- Restarted backend and verified `/api/status` and `/auth/login` return `200`.
+
+## Next Steps
+- Open `/auth/login` and submit desired login/password once to initialize first account.
+- Store `AUTH_PASSWORD_PEPPER_HASH` securely and do not rotate without planned credential reset.
+
+## Date
+2026-05-13
+
+## Summary of Changes
 - Added a dedicated deployment runbook for the actual working flow: local push to GitHub, SSH login, server-side update, and service restart.
 - Linked the new runbook from `README.md` so it is discoverable from the main docs.
 
