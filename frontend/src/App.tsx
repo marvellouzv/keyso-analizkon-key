@@ -5,10 +5,36 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import axios from "axios";
 
 import { ResultTable } from "./components/ResultTable";
+import defaultExcludedCompetitorsRaw from "./data/defaultExcludedCompetitors.txt?raw";
+import { YANDEX_REGION_OPTIONS } from "./data/yandexRegions";
 import { useStore } from "./store/useStore";
 
 const queryClient = new QueryClient();
-const DOMAIN_PATTERN = /^(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/;
+const DOMAIN_PATTERN = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$/i;
+const N_VALUES_STORAGE_PREFIX = "seo:n-values:";
+const COMPETITOR_ORDER_STORAGE_PREFIX = "seo:competitor-order:";
+const BASE_TO_YANDEX_REGION_ID: Record<string, number> = {
+  msk: 213,
+  spb: 2,
+  ekb: 54,
+  rnd: 39,
+  ufa: 172,
+  sar: 194,
+  krr: 35,
+  prm: 50,
+  sam: 51,
+  kry: 62,
+  oms: 66,
+  kzn: 43,
+  che: 56,
+  nsk: 65,
+  nnv: 47,
+  vlg: 38,
+  vrn: 193,
+  mns: 157,
+  tmn: 55,
+  tom: 67,
+};
 const BASE_OPTIONS = {
   Yandex: [
     { value: "msk", label: "Москва" },
@@ -40,11 +66,13 @@ const BASE_OPTIONS = {
   ],
   Other: [{ value: "zen", label: "Дзен" }],
 } as const;
+const SERP_TOP_NUMBER_OPTIONS = [10, 20, 30, 50, 100] as const;
 
 type AnalyzeResponse = {
   analysis_id: number;
   domain: string;
   competitors: string[];
+  competitor_sources: Record<string, string>;
   table_data: Array<Record<string, number | string>>;
   table_pool_data: Array<Record<string, number | string>>;
   diagnostics: {
@@ -56,6 +84,15 @@ type AnalyzeResponse = {
     final_output: number;
   };
   stage_results: Record<string, Array<Record<string, number | string>>>;
+  serp_summary: {
+    queries_total: number;
+    successful_queries: number;
+    failed_queries: number;
+    domains_collected: number;
+    excluded_stoplist: number;
+    added_new: number;
+  };
+  serp_progress: string[];
 };
 
 type HistoryItem = {
@@ -65,6 +102,14 @@ type HistoryItem = {
   created_at: string;
   rows_count: number;
   data?: unknown;
+};
+
+type ServiceWish = {
+  id: number;
+  text: string;
+  is_done: boolean;
+  created_at: string;
+  updated_at: string;
 };
 
 type ParseSettings = {
@@ -113,34 +158,26 @@ const PRESET_OPTIONS: Array<{ id: string; label: string; settings: ParseSettings
   },
 ];
 
-const DEFAULT_EXCLUDED_COMPETITORS_INPUT = [
-  "ozon.ru",
-  "wildberries.ru",
-  "market.yandex.ru",
-  "megamarket.ru",
-  "aliexpress.ru",
-  "goods.ru",
-  "lamoda.ru",
-  "kazan.express",
-  "price.ru",
-  "avito.ru",
-  "youla.ru",
-].join("\n");
+const DEFAULT_EXCLUDED_COMPETITORS_INPUT = defaultExcludedCompetitorsRaw
+  .split(/\r?\n/)
+  .map((line: string) => line.trim())
+  .filter(Boolean)
+  .join("\n");
 
 const VISUAL_THEME_OPTIONS: Array<{ id: VisualThemeId; label: string; description: string }> = [
   {
     id: "clean",
-    label: "Чистый Analytics",
+    label: "Чистый",
     description: "Безопасный деловой стиль",
   },
   {
     id: "executive",
-    label: "Analytics + Executive",
+    label: "Executive",
     description: "Премиальные акценты и контраст",
   },
   {
     id: "dense",
-    label: "Analytics + Data-Dense",
+    label: "Data-Dense",
     description: "Плотный режим для больших таблиц",
   },
 ];
@@ -207,6 +244,24 @@ function parseManualCompetitorsInput(value: string): string[] {
   return Array.from(new Set(lines));
 }
 
+function parseSerpQueriesInput(value: string): string[] {
+  const lines = value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const line of lines) {
+    const key = line.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(line);
+  }
+  return result;
+}
+
 function normalizeDomainInput(value: string): string {
   let domain = (value || "").trim().toLowerCase();
   if (!domain) {
@@ -221,6 +276,22 @@ function normalizeDomainInput(value: string): string {
     domain = domain.slice(4);
   }
   return domain;
+}
+
+function toApiDomain(value: string): string {
+  const normalized = normalizeDomainInput(value);
+  if (!normalized) {
+    return "";
+  }
+  try {
+    let host = new URL(`http://${normalized}`).hostname.toLowerCase();
+    if (host.startsWith("www.")) {
+      host = host.slice(4);
+    }
+    return host;
+  } catch {
+    return normalized;
+  }
 }
 
 function buildAnalyzeResponseFromHistoryItem(item: HistoryItem): AnalyzeResponse | null {
@@ -238,6 +309,7 @@ function buildAnalyzeResponseFromHistoryItem(item: HistoryItem): AnalyzeResponse
       analysis_id: item.id,
       domain: item.domain,
       competitors,
+      competitor_sources: {},
       table_data: tableData,
       table_pool_data: tableData,
       diagnostics: {
@@ -249,6 +321,15 @@ function buildAnalyzeResponseFromHistoryItem(item: HistoryItem): AnalyzeResponse
         final_output: tableData.length,
       },
       stage_results: {},
+      serp_summary: {
+        queries_total: 0,
+        successful_queries: 0,
+        failed_queries: 0,
+        domains_collected: 0,
+        excluded_stoplist: 0,
+        added_new: 0,
+      },
+      serp_progress: [],
     };
   }
 
@@ -266,15 +347,28 @@ function buildAnalyzeResponseFromHistoryItem(item: HistoryItem): AnalyzeResponse
     };
     const stageResults = (p.stage_results as AnalyzeResponse["stage_results"]) ?? {};
     const competitors = (p.competitors as string[]) ?? [];
+    const competitorSources = (p.competitor_sources as AnalyzeResponse["competitor_sources"]) ?? {};
     const domain = (p.domain as string) ?? item.domain;
+    const serpSummary = (p.serp_summary as AnalyzeResponse["serp_summary"]) ?? {
+      queries_total: 0,
+      successful_queries: 0,
+      failed_queries: 0,
+      domains_collected: 0,
+      excluded_stoplist: 0,
+      added_new: 0,
+    };
+    const serpProgress = (p.serp_progress as string[]) ?? [];
     return {
       analysis_id: item.id,
       domain,
       competitors,
+      competitor_sources: competitorSources,
       table_data: tableData,
       table_pool_data: tablePoolData,
       diagnostics,
       stage_results: stageResults,
+      serp_summary: serpSummary,
+      serp_progress: serpProgress,
     };
   }
 
@@ -286,11 +380,22 @@ function AnalyzerApp() {
   const [statusLogs, setStatusLogs] = React.useState<string[]>([]);
   const [activeAnalysis, setActiveAnalysis] = React.useState<AnalyzeResponse | null>(null);
   const [historyOpen, setHistoryOpen] = React.useState(false);
+  const [helpOpen, setHelpOpen] = React.useState(false);
   const [historyLoading, setHistoryLoading] = React.useState(false);
   const [historyRestoreLoadingId, setHistoryRestoreLoadingId] = React.useState<number | null>(null);
   const [historyError, setHistoryError] = React.useState<string | null>(null);
   const [historyItems, setHistoryItems] = React.useState<HistoryItem[]>([]);
   const [historyFilter, setHistoryFilter] = React.useState("");
+  const [wishesOpen, setWishesOpen] = React.useState(false);
+  const [wishesLoading, setWishesLoading] = React.useState(false);
+  const [wishesError, setWishesError] = React.useState<string | null>(null);
+  const [wishes, setWishes] = React.useState<ServiceWish[]>([]);
+  const [wishDraft, setWishDraft] = React.useState("");
+  const [wishSubmitting, setWishSubmitting] = React.useState(false);
+  const [wishTogglingId, setWishTogglingId] = React.useState<number | null>(null);
+  const [wishEditingId, setWishEditingId] = React.useState<number | null>(null);
+  const [wishEditingText, setWishEditingText] = React.useState("");
+  const [wishSavingId, setWishSavingId] = React.useState<number | null>(null);
   const [settings, setSettings] = React.useState<ParseSettings>({
     competitorsLimit: 10,
     mainMaxPages: 10,
@@ -306,8 +411,15 @@ function AnalyzerApp() {
   const [tableTop50CompetitorsMin, setTableTop50CompetitorsMin] = React.useState<number>(3);
   const [manualCompetitorsInput, setManualCompetitorsInput] = React.useState<string>("");
   const [excludedCompetitorsInput, setExcludedCompetitorsInput] = React.useState<string>(DEFAULT_EXCLUDED_COMPETITORS_INPUT);
+  const [serpQueriesInput, setSerpQueriesInput] = React.useState<string>("");
+  const [serpTopNumber, setSerpTopNumber] = React.useState<number>(10);
+  const [serpRegionSearch, setSerpRegionSearch] = React.useState<string>("");
+  const [serpRegionId, setSerpRegionId] = React.useState<number>(213);
   const [visualTheme, setVisualTheme] = React.useState<VisualThemeId>("clean");
   const [copySuccessVisible, setCopySuccessVisible] = React.useState<boolean>(false);
+  const [nValues, setNValues] = React.useState<Record<string, string>>({});
+  const [competitorOrder, setCompetitorOrder] = React.useState<string[]>([]);
+  const [hasCustomCompetitorOrder, setHasCustomCompetitorOrder] = React.useState<boolean>(false);
   const copySuccessTimeoutRef = React.useRef<number | null>(null);
   const manualCompetitors = React.useMemo(
     () => parseManualCompetitorsInput(manualCompetitorsInput),
@@ -317,10 +429,28 @@ function AnalyzerApp() {
     () => parseManualCompetitorsInput(excludedCompetitorsInput),
     [excludedCompetitorsInput],
   );
-  const requiresManualCompetitors = settings.competitorsLimit === 0 && manualCompetitors.length === 0;
+  const serpQueries = React.useMemo(() => parseSerpQueriesInput(serpQueriesInput), [serpQueriesInput]);
+  const serpQueriesLimitError = serpQueries.length > 10 ? "Не более 10 запросов" : "";
+  const filteredSerpRegions = React.useMemo(() => {
+    const q = serpRegionSearch.trim().toLowerCase();
+    if (!q) {
+      return YANDEX_REGION_OPTIONS;
+    }
+    return YANDEX_REGION_OPTIONS.filter((item) => item.label.toLowerCase().includes(q));
+  }, [serpRegionSearch]);
+  const expectedProgressSteps = React.useMemo(() => {
+    let steps = 12;
+    if (serpQueries.length > 0) {
+      steps += 3;
+    }
+    return steps;
+  }, [serpQueries.length]);
+  const progressPercent = Math.max(5, Math.min(100, Math.round((statusLogs.length / Math.max(1, expectedProgressSteps)) * 100)));
+  const requiresManualCompetitors = settings.competitorsLimit === 0 && manualCompetitors.length === 0 && serpQueries.length === 0;
 
   const normalizedDomain = normalizeDomainInput(domain);
-  const isDomainValid = DOMAIN_PATTERN.test(normalizedDomain);
+  const normalizedDomainForApi = toApiDomain(domain);
+  const isDomainValid = DOMAIN_PATTERN.test(normalizedDomainForApi);
   const showDomainError = domain.trim().length > 0 && !isDomainValid;
 
   const addLog = (msg: string) => {
@@ -335,11 +465,15 @@ function AnalyzerApp() {
         window.clearTimeout(copySuccessTimeoutRef.current);
         copySuccessTimeoutRef.current = null;
       }
-      addLog(`Запуск анализа для ${normalizedDomain}...`);
+      addLog(`Запуск анализа для ${normalizedDomain || domain.trim()}...`);
       setTableCompetitorsTopPos(10);
       setTableMainMinPos(10);
       setTableResultLimit(settings.resultLimit);
       setTableTop50CompetitorsMin(settings.top50CompetitorsMin);
+
+      if (serpQueries.length > 10) {
+        throw new Error("Не более 10 запросов");
+      }
 
       const res = await axios.post("/api/analyze", {
         domain: normalizedDomain,
@@ -347,6 +481,9 @@ function AnalyzerApp() {
         competitors_limit: settings.competitorsLimit,
         manual_competitors: manualCompetitors,
         excluded_competitors: excludedCompetitors,
+        serp_queries: serpQueries,
+        serp_top_number: serpTopNumber,
+        serp_region_id: serpRegionId || BASE_TO_YANDEX_REGION_ID[region] || 213,
         top50_competitors_min: settings.top50CompetitorsMin,
         main_max_pages: settings.mainMaxPages,
         competitors_max_pages: settings.competitorsMaxPages,
@@ -358,6 +495,23 @@ function AnalyzerApp() {
     },
     onSuccess: (data) => {
       setActiveAnalysis(data);
+      for (const line of data.serp_progress ?? []) {
+        addLog(line);
+      }
+      const postProcessSteps = [
+        "Нормализуем позиции и удаляем дубли...",
+        "Объединяем фразы сайта и конкурентов...",
+        "Считаем [!Wordstat] для ключевых фраз...",
+        "Рассчитываем метрики конкуренции и приоритет...",
+        "Формируем пул строк для локальной фильтрации таблицы...",
+        "Применяем фильтр позиций исследуемого сайта...",
+        "Применяем фильтр топа конкурентов...",
+        "Сортируем итоговые строки по приоритету...",
+        "Ограничиваем результат по лимиту строк...",
+      ];
+      for (const step of postProcessSteps) {
+        addLog(step);
+      }
     },
     onError: (err: any) => {
       const errorMsg = extractApiErrorMessage(err);
@@ -366,6 +520,112 @@ function AnalyzerApp() {
   });
 
   const analysisData = activeAnalysis ?? mutation.data ?? null;
+  const nStorageKey = React.useMemo(() => {
+    if (!analysisData) {
+      return null;
+    }
+    return `${N_VALUES_STORAGE_PREFIX}${analysisData.analysis_id}`;
+  }, [analysisData]);
+  const competitorOrderStorageKey = React.useMemo(() => {
+    if (!analysisData) {
+      return null;
+    }
+    return `${COMPETITOR_ORDER_STORAGE_PREFIX}${analysisData.analysis_id}`;
+  }, [analysisData]);
+
+  React.useEffect(() => {
+    if (!nStorageKey) {
+      setNValues({});
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(nStorageKey);
+      if (!raw) {
+        setNValues({});
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        const normalized: Record<string, string> = {};
+        for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+          if (typeof key !== "string" || typeof value !== "string") {
+            continue;
+          }
+          const sanitized = value.replace(/\D/g, "").slice(0, 3);
+          if (sanitized) {
+            normalized[key] = sanitized;
+          }
+        }
+        setNValues(normalized);
+        return;
+      }
+      setNValues({});
+    } catch {
+      setNValues({});
+    }
+  }, [nStorageKey]);
+
+  React.useEffect(() => {
+    if (!analysisData) {
+      setCompetitorOrder([]);
+      setHasCustomCompetitorOrder(false);
+      return;
+    }
+    const available = analysisData.competitors;
+    if (!competitorOrderStorageKey) {
+      setCompetitorOrder(available);
+      setHasCustomCompetitorOrder(false);
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(competitorOrderStorageKey);
+      if (!raw) {
+        setCompetitorOrder(available);
+        setHasCustomCompetitorOrder(false);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        setCompetitorOrder(available);
+        setHasCustomCompetitorOrder(false);
+        return;
+      }
+      const saved = parsed.filter((item): item is string => typeof item === "string");
+      const filteredSaved = saved.filter((item) => available.includes(item));
+      const rest = available.filter((item) => !filteredSaved.includes(item));
+      setCompetitorOrder([...filteredSaved, ...rest]);
+      setHasCustomCompetitorOrder(filteredSaved.length > 0);
+    } catch {
+      setCompetitorOrder(available);
+      setHasCustomCompetitorOrder(false);
+    }
+  }, [analysisData, competitorOrderStorageKey]);
+
+  const handleNChange = React.useCallback(
+    (word: string, value: string) => {
+      if (!word) {
+        return;
+      }
+      const sanitized = value.replace(/\D/g, "").slice(0, 3);
+      setNValues((prev) => {
+        const next: Record<string, string> = { ...prev };
+        if (sanitized) {
+          next[word] = sanitized;
+        } else {
+          delete next[word];
+        }
+        if (nStorageKey) {
+          try {
+            window.localStorage.setItem(nStorageKey, JSON.stringify(next));
+          } catch {
+            // Ignore storage write errors (quota/private mode), keep UI responsive.
+          }
+        }
+        return next;
+      });
+    },
+    [nStorageKey],
+  );
 
   const loadHistory = React.useCallback(async () => {
     setHistoryLoading(true);
@@ -403,6 +663,91 @@ function AnalyzerApp() {
     setHistoryOpen(true);
     await loadHistory();
   }, [loadHistory]);
+
+  const loadWishes = React.useCallback(async () => {
+    setWishesLoading(true);
+    setWishesError(null);
+    try {
+      const res = await axios.get<ServiceWish[]>("/api/wishes");
+      setWishes(res.data ?? []);
+    } catch (err: any) {
+      setWishesError(extractApiErrorMessage(err));
+    } finally {
+      setWishesLoading(false);
+    }
+  }, []);
+
+  const openWishes = React.useCallback(async () => {
+    setWishesOpen(true);
+    await loadWishes();
+  }, [loadWishes]);
+
+  const submitWish = React.useCallback(async () => {
+    const text = wishDraft.trim();
+    if (!text) {
+      return;
+    }
+    setWishSubmitting(true);
+    setWishesError(null);
+    try {
+      await axios.post<ServiceWish>("/api/wishes", { text });
+      setWishDraft("");
+      await loadWishes();
+    } catch (err: any) {
+      setWishesError(extractApiErrorMessage(err));
+    } finally {
+      setWishSubmitting(false);
+    }
+  }, [loadWishes, wishDraft]);
+
+  const toggleWish = React.useCallback(
+    async (wish: ServiceWish) => {
+      setWishTogglingId(wish.id);
+      setWishesError(null);
+      try {
+        await axios.patch<ServiceWish>(`/api/wishes/${wish.id}/toggle`, { is_done: !wish.is_done });
+        await loadWishes();
+      } catch (err: any) {
+        setWishesError(extractApiErrorMessage(err));
+      } finally {
+        setWishTogglingId(null);
+      }
+    },
+    [loadWishes],
+  );
+
+  const startWishEdit = React.useCallback((wish: ServiceWish) => {
+    setWishEditingId(wish.id);
+    setWishEditingText(wish.text);
+  }, []);
+
+  const cancelWishEdit = React.useCallback(() => {
+    setWishEditingId(null);
+    setWishEditingText("");
+  }, []);
+
+  const saveWishEdit = React.useCallback(async () => {
+    if (wishEditingId === null) {
+      return;
+    }
+    const text = wishEditingText.trim();
+    if (!text) {
+      setWishesError("Текст предложения не может быть пустым.");
+      return;
+    }
+    setWishSavingId(wishEditingId);
+    setWishesError(null);
+    try {
+      await axios.patch<ServiceWish>(`/api/wishes/${wishEditingId}`, { text });
+      setWishEditingId(null);
+      setWishEditingText("");
+      await loadWishes();
+    } catch (err: any) {
+      setWishesError(extractApiErrorMessage(err));
+    } finally {
+      setWishSavingId(null);
+    }
+  }, [loadWishes, wishEditingId, wishEditingText]);
 
   const restoreHistoryItem = React.useCallback(
     async (item: HistoryItem) => {
@@ -452,17 +797,13 @@ function AnalyzerApp() {
     const steps = [
       "Получаем ключи исследуемого сайта...",
       "Ищем конкурентов...",
-      "Собираем данные конкурентов с учетом лимитов API...",
-      "Нормализуем позиции и удаляем дубли...",
-      "Объединяем фразы сайта и конкурентов...",
-      "Считаем [!Wordstat] для ключевых фраз...",
-      "Рассчитываем метрики конкуренции и приоритет...",
-      "Формируем пул строк для локальной фильтрации таблицы...",
-      "Применяем фильтр позиций исследуемого сайта...",
-      "Применяем фильтр топа конкурентов...",
-      "Сортируем итоговые строки по приоритету...",
-      "Ограничиваем результат по лимиту строк...",
     ];
+    if (serpQueries.length > 0) {
+      steps.push("Запускаем задания по запросам из выдачи Яндекса...");
+      steps.push("Ожидаем готовность задач SERP и собираем домены...");
+      steps.push("Объединяем найденные домены SERP со списком конкурентов...");
+    }
+    steps.push("Собираем данные конкурентов с учетом лимитов API...");
 
     let i = 0;
     const interval = setInterval(() => {
@@ -475,7 +816,7 @@ function AnalyzerApp() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [mutation.isPending]);
+  }, [mutation.isPending, serpQueries.length]);
 
   const chartData = React.useMemo(() => {
     if (!analysisData) {
@@ -602,9 +943,36 @@ function AnalyzerApp() {
         }
         return a.competitor.localeCompare(b.competitor);
       });
+    const defaultOrder = competitorStats.map((item) => item.competitor);
+    if (!hasCustomCompetitorOrder) {
+      return defaultOrder;
+    }
+    const custom = competitorOrder.filter((item) => defaultOrder.includes(item));
+    const rest = defaultOrder.filter((item) => !custom.includes(item));
+    return [...custom, ...rest];
+  }, [analysisData, competitorOrder, hasCustomCompetitorOrder, tableFilteredData]);
 
-    return competitorStats.map((item) => item.competitor);
-  }, [analysisData, tableFilteredData]);
+  const handleCompetitorOrderChange = React.useCallback(
+    (nextCompetitors: string[]) => {
+      if (!analysisData) {
+        return;
+      }
+      const availableSet = new Set(analysisData.competitors);
+      const normalized = nextCompetitors.filter((item) => availableSet.has(item));
+      const rest = analysisData.competitors.filter((item) => !normalized.includes(item));
+      const finalOrder = [...normalized, ...rest];
+      setCompetitorOrder(finalOrder);
+      setHasCustomCompetitorOrder(true);
+      if (competitorOrderStorageKey) {
+        try {
+          window.localStorage.setItem(competitorOrderStorageKey, JSON.stringify(finalOrder));
+        } catch {
+          // Ignore storage write errors and keep UI responsive.
+        }
+      }
+    },
+    [analysisData, competitorOrderStorageKey],
+  );
 
   const copyTableToClipboard = React.useCallback(async () => {
     if (!analysisData) {
@@ -612,6 +980,7 @@ function AnalyzerApp() {
     }
 
     const columns = [
+      "n_value",
       "word",
       "[!Wordstat]",
       "competitors_top10_count",
@@ -621,6 +990,7 @@ function AnalyzerApp() {
     ];
 
     const labels: Record<string, string> = {
+      n_value: "N",
       word: "Запросы",
       "[!Wordstat]": "Частотность",
       competitors_top10_count: "Конкурентов в ТОП",
@@ -628,6 +998,10 @@ function AnalyzerApp() {
     };
 
     const formatCell = (column: string, row: Record<string, number | string>) => {
+      if (column === "n_value") {
+        const word = String(row.word ?? "");
+        return nValues[word] ?? "";
+      }
       const raw = row[column];
       if (column === "word") {
         return String(raw ?? "");
@@ -702,7 +1076,7 @@ function AnalyzerApp() {
         setCopySuccessVisible(false);
       }
     }
-  }, [addLog, analysisData, tableFilteredData, visibleCompetitors]);
+  }, [addLog, analysisData, nValues, tableFilteredData, visibleCompetitors]);
 
   React.useEffect(() => {
     return () => {
@@ -739,14 +1113,30 @@ function AnalyzerApp() {
       <div className="mx-auto max-w-6xl">
         <header className="mb-10">
           <div className="mb-2 flex items-center justify-between gap-3">
-            <h1 className="app-title text-4xl font-extrabold text-slate-900">SEO Keys.so Analyzer</h1>
-            <button
-              type="button"
-              onClick={openHistory}
-              className="app-preset-chip app-preset-chip-idle rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100"
-            >
-              История
-            </button>
+            <h1 className="app-title text-4xl font-extrabold text-slate-900">Поиск конкурентов и запросов для КП</h1>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setHelpOpen(true)}
+                className="app-preset-chip app-preset-chip-idle rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100"
+              >
+                Помощь
+              </button>
+              <button
+                type="button"
+                onClick={openWishes}
+                className="app-preset-chip app-preset-chip-idle rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100"
+              >
+                Хотелки
+              </button>
+              <button
+                type="button"
+                onClick={openHistory}
+                className="app-preset-chip app-preset-chip-idle rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100"
+              >
+                История
+              </button>
+            </div>
           </div>
           <p className="app-subtitle text-slate-500">Анализ видимости домена и сравнение с конкурентами</p>
         </header>
@@ -757,22 +1147,19 @@ function AnalyzerApp() {
               <p className="app-subtitle text-sm font-medium text-slate-600">Визуальный стиль интерфейса</p>
               <p className="app-subtitle text-xs text-slate-500">Можно переключать в любой момент, без пересчета данных</p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {VISUAL_THEME_OPTIONS.map((theme) => (
-                <button
-                  key={theme.id}
-                  type="button"
-                  onClick={() => setVisualTheme(theme.id)}
-                  className={`app-theme-chip rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
-                    visualTheme === theme.id
-                      ? "app-theme-chip-active border-blue-600 bg-blue-600 text-white"
-                      : "app-theme-chip-idle border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-                  }`}
-                  title={theme.description}
-                >
-                  {theme.label}
-                </button>
-              ))}
+            <div className="w-full max-w-[260px]">
+              <select
+                value={visualTheme}
+                onChange={(e) => setVisualTheme(e.target.value as VisualThemeId)}
+                className="app-select w-full rounded-md border border-slate-300 bg-white p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                title={VISUAL_THEME_OPTIONS.find((theme) => theme.id === visualTheme)?.description ?? ""}
+              >
+                {VISUAL_THEME_OPTIONS.map((theme) => (
+                  <option key={theme.id} value={theme.id}>
+                    {theme.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -941,7 +1328,7 @@ function AnalyzerApp() {
                   />
                   {requiresManualCompetitors && (
                     <p className="mt-1 text-xs text-red-600">
-                      При значении `Количество конкурентов = 0` добавьте хотя бы один домен вручную.
+                      При значении `Количество конкурентов = 0` добавьте хотя бы один домен вручную или хотя бы один запрос в блоке `Из выдачи Яндекса`.
                     </p>
                   )}
                 </label>
@@ -958,6 +1345,62 @@ function AnalyzerApp() {
                     onChange={(e) => setExcludedCompetitorsInput(e.target.value)}
                   />
                 </label>
+
+                <div className="text-sm text-slate-700 md:col-span-2">
+                  <FieldLabel
+                    text="Из выдачи Яндекса"
+                    hint="1 запрос = 1 строка, максимум 10 запросов. Пустые строки и дубликаты игнорируются."
+                  />
+                  <textarea
+                    rows={5}
+                    className="app-input mt-1 h-[120px] w-full resize-y overflow-y-auto rounded-md border border-slate-300 bg-white p-2 font-mono text-sm"
+                    placeholder="Введите запросы, по одному на строку"
+                    value={serpQueriesInput}
+                    onChange={(e) => setSerpQueriesInput(e.target.value)}
+                  />
+                  {serpQueriesLimitError && <p className="mt-1 text-xs text-red-600">{serpQueriesLimitError}</p>}
+
+                  <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_1fr]">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-600">Домены из выдачи / запрос</label>
+                      <select
+                        className="app-select w-full rounded-md border border-slate-300 bg-white p-2 text-sm"
+                        value={serpTopNumber}
+                        onChange={(e) => setSerpTopNumber(Number(e.target.value))}
+                      >
+                        {SERP_TOP_NUMBER_OPTIONS.map((value) => (
+                          <option key={value} value={value}>
+                            {value}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-600">Поиск региона</label>
+                      <input
+                        type="text"
+                        value={serpRegionSearch}
+                        onChange={(e) => setSerpRegionSearch(e.target.value)}
+                        placeholder="Введите город"
+                        className="app-input w-full rounded-md border border-slate-300 bg-white p-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-600">Регион</label>
+                      <select
+                        className="app-select w-full rounded-md border border-slate-300 bg-white p-2 text-sm"
+                        value={serpRegionId}
+                        onChange={(e) => setSerpRegionId(Number(e.target.value))}
+                      >
+                        {filteredSerpRegions.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.label} ({item.id})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
               </div>
 
             </div>
@@ -966,12 +1409,19 @@ function AnalyzerApp() {
           <div className="flex items-end">
               <button
                 onClick={() => mutation.mutate()}
-                disabled={mutation.isPending || !isDomainValid || requiresManualCompetitors}
+                disabled={mutation.isPending || !isDomainValid || requiresManualCompetitors || Boolean(serpQueriesLimitError)}
                 className="app-btn-primary h-[42px] rounded-md bg-blue-600 px-8 py-2 font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {mutation.isPending ? "Анализ..." : "Запустить"}
               </button>
             </div>
+            {mutation.isPending && (
+              <div className="w-full">
+                <div className="mt-2 h-2 w-full overflow-hidden rounded bg-slate-200">
+                  <div className="h-full bg-blue-600 transition-all duration-500" style={{ width: `${progressPercent}%` }} />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1040,6 +1490,10 @@ function AnalyzerApp() {
                   <div className="app-summary-secondary rounded-lg bg-green-50 p-4">
                     <p className="text-sm font-medium text-green-600">Найдено конкурентов</p>
                     <p className="text-2xl font-bold text-green-900">{analysisData.competitors.length}</p>
+                  </div>
+                  <div className="rounded-lg bg-amber-50 p-4">
+                    <p className="text-sm font-medium text-amber-700">Найдено конкурентов из SERP</p>
+                    <p className="text-2xl font-bold text-amber-900">{analysisData.serp_summary?.added_new ?? 0}</p>
                   </div>
                 </div>
               </div>
@@ -1224,6 +1678,10 @@ function AnalyzerApp() {
               <ResultTable
                 data={tableFilteredData}
                 domains={[analysisData.domain, ...visibleCompetitors]}
+                competitorSources={analysisData.competitor_sources ?? {}}
+                nValues={nValues}
+                onNChange={handleNChange}
+                onCompetitorOrderChange={handleCompetitorOrderChange}
                 variant={visualTheme}
               />
             </div>
@@ -1304,6 +1762,213 @@ function AnalyzerApp() {
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {helpOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+            <div className="app-card w-full max-w-4xl rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h3 className="text-lg font-semibold text-slate-900">Помощь по интерфейсу</h3>
+                <button
+                  type="button"
+                  onClick={() => setHelpOpen(false)}
+                  className="rounded border border-slate-300 px-2 py-1 text-sm text-slate-600 hover:bg-slate-100"
+                >
+                  Закрыть
+                </button>
+              </div>
+
+              <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1 text-sm text-slate-700">
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <p className="font-semibold text-slate-900">1) Домен</p>
+                  <p className="mt-1">Основной сайт для анализа. От него строится вся таблица сравнений.</p>
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <p className="font-semibold text-slate-900">2) База региона</p>
+                  <p className="mt-1">
+                    Выбор поисковой базы Keys.so (Яндекс/Google + регион). Влияет на все данные: ключи, конкурентов и позиции.
+                  </p>
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <p className="font-semibold text-slate-900">3) Визуальный стиль интерфейса</p>
+                  <p className="mt-1">Меняет только оформление. На расчеты и API-запросы не влияет.</p>
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <p className="font-semibold text-slate-900">4) Глубина парсинга</p>
+                  <p className="mt-1">Настройки влияют на скорость и объем данных:</p>
+                  <p className="mt-1">- Глубина для сайта: сколько страниц ключей брать у вашего домена.</p>
+                  <p>- Количество конкурентов: сколько конкурентов брать из API.</p>
+                  <p>- Глубина для конкурентов: сколько страниц ключей брать у каждого конкурента.</p>
+                  <p>- Макс. строк в таблице: лимит итогового вывода.</p>
+                  <p>- Запросы за ТОП50, конкуренты: фильтр для конкурентных ключей без позиций сайта в ТОП50.</p>
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <p className="font-semibold text-slate-900">5) Конкуренты вручную</p>
+                  <p className="mt-1">Дополнительные домены (по одному в строке), которые принудительно добавляются в анализ.</p>
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <p className="font-semibold text-slate-900">6) Исключить конкуренты</p>
+                  <p className="mt-1">Домены, которые нужно исключить из анализа. Применяются только значения из текущей формы.</p>
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <p className="font-semibold text-slate-900">7) Из выдачи Яндекса</p>
+                  <p className="mt-1">Добавляет конкурентов из SERP по вашим запросам.</p>
+                  <p className="mt-1">- Запросы: 1 строка = 1 запрос, максимум 10.</p>
+                  <p>- Домены из выдачи / запрос: сколько результатов брать с каждого запроса.</p>
+                  <p>- Поиск региона + Регион: регион для SERP-задач.</p>
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <p className="font-semibold text-slate-900">8) Кнопка Запустить</p>
+                  <p className="mt-1">Стартует полный цикл: сбор ключей, сбор конкурентов, фильтрация, расчеты и формирование таблицы.</p>
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <p className="font-semibold text-slate-900">9) Статус выполнения</p>
+                  <p className="mt-1">Показывает этапы обработки и ошибки. Удобно для понимания, на каком шаге задержка.</p>
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <p className="font-semibold text-slate-900">10) Сводка и диагностика</p>
+                  <p className="mt-1">Показывают статистику результата: сколько строк, сколько конкурентов, сколько добавлено из SERP и т.д.</p>
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <p className="font-semibold text-slate-900">11) Итоговая таблица</p>
+                  <p className="mt-1">Основной результат сравнения позиций.</p>
+                  <p className="mt-1">- Столбец N редактируется и сохраняется локально.</p>
+                  <p>- Заголовки доменов содержат источник: API / SERP / РУЧ.</p>
+                  <p>- Доступна сортировка по столбцам и ручная перестановка конкурентных колонок.</p>
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <p className="font-semibold text-slate-900">12) История</p>
+                  <p className="mt-1">Позволяет открыть и восстановить прошлые анализы без повторного запуска.</p>
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <p className="font-semibold text-slate-900">13) Хотелки</p>
+                  <p className="mt-1">Список предложений по сервису: добавление, редактирование, отметка выполненных.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {wishesOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+            <div className="app-card w-full max-w-3xl rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h3 className="text-lg font-semibold text-slate-900">Список предложений по сервису</h3>
+                <button
+                  type="button"
+                  onClick={() => setWishesOpen(false)}
+                  className="rounded border border-slate-300 px-2 py-1 text-sm text-slate-600 hover:bg-slate-100"
+                >
+                  Закрыть
+                </button>
+              </div>
+
+              {wishesError && <p className="mb-2 text-sm text-red-600">ОШИБКА: {wishesError}</p>}
+              {wishesLoading && <p className="mb-3 text-sm text-slate-500">Загружаем предложения...</p>}
+
+              <div className="mb-4 max-h-[320px] overflow-y-auto rounded-md border border-slate-200">
+                {wishes.length === 0 ? (
+                  <p className="p-4 text-sm text-slate-500">Пока нет предложений.</p>
+                ) : (
+                  <div className="divide-y divide-slate-200">
+                    {wishes.map((wish) => {
+                      const isEditing = wishEditingId === wish.id;
+                      return (
+                        <div
+                          key={wish.id}
+                          className={`flex items-start gap-3 p-3 ${wish.is_done ? "bg-emerald-50/70" : "bg-amber-50/70"}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={wish.is_done}
+                            disabled={wishTogglingId === wish.id}
+                            onChange={() => toggleWish(wish)}
+                            className="mt-1 h-4 w-4 cursor-pointer rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                          />
+
+                          <div className="min-w-0 flex-1">
+                            {isEditing ? (
+                              <textarea
+                                value={wishEditingText}
+                                onChange={(e) => setWishEditingText(e.target.value)}
+                                rows={2}
+                                className="w-full rounded-md border border-slate-300 bg-white p-2 text-sm text-slate-800"
+                              />
+                            ) : (
+                              <p className="whitespace-pre-wrap text-sm text-slate-800">{wish.text}</p>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {isEditing ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={saveWishEdit}
+                                  disabled={wishSavingId === wish.id}
+                                  className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                                >
+                                  OK
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={cancelWishEdit}
+                                  className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-100"
+                                >
+                                  Отмена
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => startWishEdit(wish)}
+                                className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-100"
+                                title="Редактировать"
+                              >
+                                ✎
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <textarea
+                  value={wishDraft}
+                  onChange={(e) => setWishDraft(e.target.value)}
+                  rows={5}
+                  placeholder="Добавьте предложение по улучшению сервиса..."
+                  className="w-full resize-y rounded-md border border-slate-300 bg-white p-2 text-sm text-slate-800"
+                />
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={submitWish}
+                    disabled={wishSubmitting || wishDraft.trim().length === 0}
+                    className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Отправить
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

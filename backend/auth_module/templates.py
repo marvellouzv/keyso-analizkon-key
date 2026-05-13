@@ -11,7 +11,7 @@ def login_page_html(login_action: str, csrf_token: str, error: str | None = None
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Авторизация</title>
+  <title>Поиск конкурентов и запросов для КП — Авторизация</title>
   <style>
     :root {{
       color-scheme: light dark;
