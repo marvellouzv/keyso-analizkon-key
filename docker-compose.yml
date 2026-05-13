@@ -8,4 +8,9 @@ services:
       - ./backend/.env
     ports:
       - "127.0.0.1:${APP_PORT:-8101}:8000"
+    volumes:
+      - keyso_data:/app/backend/storage
     restart: unless-stopped
+
+volumes:
+  keyso_data:

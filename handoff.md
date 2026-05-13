@@ -2156,3 +2156,88 @@
 ## Next Steps
 - Re-run analysis with `постройдом.рф` and compare response against previous punycode-based attempt.
 
+## Date
+2026-05-13
+
+## Summary of Changes
+- Added "fast path" operational notes for routine deploy without troubleshooting.
+- Updated `DEPLOY_GUIDE.md` with a compact 3-step flow:
+  - local commit+push (including stable `GIT_SSH_COMMAND` for Windows/OpenSSH),
+  - remote forced sync + `docker compose up -d --build`,
+  - remote health-check command.
+- Goal: repeatable deploy in 1-2 minutes with minimal manual decisions.
+
+## Files Changed
+- `DEPLOY_GUIDE.md`
+- `handoff.md`
+
+## Risks / Known Issues
+- Fast path uses `git reset --hard origin/master` on server repo state (safe for this deployment repo workflow, but discards unstashed server-side local edits).
+
+## Validation Performed
+- Commands in guide are based on successful run performed in current session (push + remote rebuild + health 200).
+
+## Next Steps
+- Use the new fast path for daily deploys; keep full troubleshooting sections for exceptional cases only.
+
+## Date
+2026-05-13
+
+## Summary of Changes
+- Switched local database storage from temp directory to persistent project path:
+  - from OS temp folder
+  - to `backend/storage/sql_app.db`.
+- Added Docker volume mapping for persistence between container recreates:
+  - `./backend/storage:/app/backend/storage`.
+- Goal: preserve `История анализов` and related SQLite data after restart/rebuild.
+
+## Files Changed
+- `backend/database.py`
+- `docker-compose.yml`
+- `README.md`
+- `handoff.md`
+
+## Risks / Known Issues
+- Existing historical rows from old temp-path DB are not auto-migrated.
+- Local verification via Docker is currently blocked if Docker Desktop daemon is not running.
+
+## Validation Performed
+- Backend compile check (`python -m compileall .`) passed.
+- Lint diagnostics for changed files: no issues.
+- Attempted `docker compose up -d --build` failed locally due to unavailable Docker daemon (`dockerDesktopLinuxEngine` pipe missing).
+
+## Next Steps
+- Start Docker Desktop locally and rerun:
+  - `docker compose up -d --build`
+  - verify `backend/storage/sql_app.db` persists after container restart.
+
+## Date
+2026-05-13
+
+## Summary of Changes
+- Hardened persistence setup for server updates:
+  - switched storage mount from bind path `./backend/storage` to named Docker volume `keyso_data`.
+- Confirmed that both entities are persisted in the same SQLite DB:
+  - `analysis_history` (history),
+  - `service_wishes` (wishlist / "Хотелки").
+- Updated docs to explicitly state data-retention behavior and warning about destructive command.
+
+## Files Changed
+- `docker-compose.yml`
+- `README.md`
+- `DEPLOY_GUIDE.md`
+- `handoff.md`
+
+## Risks / Known Issues
+- Running `docker compose down -v` will remove `keyso_data` and erase history + wishes.
+- Existing data from prior storage location may require one-time migration if environment changed.
+
+## Validation Performed
+- Verified `ServiceWish` model/table exists and persists via SQLAlchemy DB session commits.
+- Verified wishes API endpoints in backend (`GET/POST/PATCH /api/wishes*`) write through the same DB connection.
+- Verified compose now uses named volume mapping `keyso_data:/app/backend/storage`.
+
+## Next Steps
+- On server run `docker compose up -d --build` (without `down -v`).
+- Add one wish + run one analysis, then restart container and confirm both remain.
+

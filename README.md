@@ -49,6 +49,13 @@
    - `docker compose ps`
    - `curl -i http://127.0.0.1:<APP_PORT>/api/status`
 
+Персистентность данных:
+- Для SQLite используется постоянный Docker volume `keyso_data`, смонтированный в `/app/backend/storage`.
+- Поэтому после `docker compose up -d --build` сохраняются:
+  - `История анализов` (`analysis_history`),
+  - `Список предложений` / `Хотелки` (`service_wishes`).
+- Внимание: `docker compose down -v` удаляет volume и очищает эти данные.
+
 Важно для серверной инструкции STUDENT:
 - Публикуйте только `127.0.0.1:<your-port>:8000` (не `0.0.0.0`).
 - Используйте только свой порт (например `8101` для VB, `8102` для NB и т.д.).
@@ -78,6 +85,7 @@
 - `backend/services/analyzer.py` — обработка данных через Pandas (сведение таблиц).
 - `frontend/src/components/ResultTable.tsx` — компонент отображения данных с цветовой индикацией.
 - `backend/auth_module/` — изолированный модуль авторизации (middleware + роуты + сессии + CSRF/rate-limit).
+- `backend/storage/sql_app.db` — постоянная SQLite БД истории анализов и хотелок.
 
 ## Модуль авторизации (изолированный)
 
