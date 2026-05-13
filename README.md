@@ -53,7 +53,9 @@
 - Для SQLite используется постоянный Docker volume `keyso_data`, смонтированный в `/app/backend/storage`.
 - Поэтому после `docker compose up -d --build` сохраняются:
   - `История анализов` (`analysis_history`),
-  - `Список предложений` / `Хотелки` (`service_wishes`).
+  - `Список предложений` / `Хотелки` (`service_wishes`),
+  - авторизационные данные и сессии (`auth_users`, `auth_sessions`, `auth_login_attempts`).
+- Бэкенд использует явный путь БД через `SQLITE_DB_PATH` (в Docker: `/app/backend/storage/sql_app.db`), чтобы auth и прикладные таблицы всегда жили в одной постоянной базе.
 - Внимание: `docker compose down -v` удаляет volume и очищает эти данные.
 
 Важно для серверной инструкции STUDENT:

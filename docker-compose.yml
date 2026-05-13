@@ -6,6 +6,8 @@ services:
     container_name: keyso-analyzer-app
     env_file:
       - ./backend/.env
+    environment:
+      - SQLITE_DB_PATH=/app/backend/storage/sql_app.db
     ports:
       - "127.0.0.1:${APP_PORT:-8101}:8000"
     volumes:

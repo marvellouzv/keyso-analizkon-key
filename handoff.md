@@ -2241,3 +2241,34 @@
 - On server run `docker compose up -d --build` (without `down -v`).
 - Add one wish + run one analysis, then restart container and confirm both remain.
 
+## Date
+2026-05-13
+
+## Summary of Changes
+- Extended DB persistence hardening to auth data:
+  - backend now supports explicit SQLite path via `SQLITE_DB_PATH`,
+  - docker service now pins this path to `/app/backend/storage/sql_app.db`.
+- This guarantees auth and app data are stored in the same persistent DB file:
+  - `auth_users`, `auth_sessions`, `auth_login_attempts`,
+  - `analysis_history`, `service_wishes`.
+
+## Files Changed
+- `backend/database.py`
+- `docker-compose.yml`
+- `backend/.env.example`
+- `README.md`
+- `handoff.md`
+
+## Risks / Known Issues
+- `docker compose down -v` still removes `keyso_data` and resets all auth/app state.
+- Existing environments with a different previous DB location may require one-time migration.
+
+## Validation Performed
+- Verified SQLAlchemy DB URL construction now uses `SQLITE_DB_PATH` (with auto-create parent directory).
+- Verified compose injects `SQLITE_DB_PATH=/app/backend/storage/sql_app.db`.
+- Backend compile check passed after changes.
+
+## Next Steps
+- Redeploy and log in once.
+- Verify that after `docker compose restart app` session remains valid (or at least user record/session rows remain in DB).
+
