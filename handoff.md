@@ -2427,3 +2427,24 @@
 ## Next Steps
 - По желанию: перенести правило в **`.gitignore`** в git и в `README.md` одной фразой указать, что полный деплой — внутренний/локальный гайд.
 
+---
+
+## Date
+2026-05-14
+
+## Summary of Changes
+- Запрошен полный цикл: push → SSH → pull → `docker compose up -d --build` без БД. **Push из среды агента не выполнен** (`Permission denied (publickey)`, также ошибка создания `~/.ssh` из‑за кириллицы в пути профиля). На **seovb** выполнены `git fetch`, сравнение `HEAD` с `origin/master` (уже синхрон), **`docker compose up -d --build`** (контейнер пересоздан, volume не трогали). Проверка: `wget` → `/api/status` **200**.
+
+## Files Changed
+- `handoff.md` (запись)
+
+## Risks / Known Issues
+- На GitHub **нет** локальных коммитов `6650c25` и ранее `1ed468d`, пока пользователь не сделает `git push` со своей машины (SSH-ключ GitHub или HTTPS+PAT). После push на сервере: `git fetch && git merge origin/master` (у агента `git pull` через SSH с Windows давал аварийный выход клиента — см. ниже).
+
+## Validation Performed
+- Локально: `git push` → отказ GitHub SSH.
+- `ssh seovb` → OK; `docker compose up -d --build` → OK; `wget http://127.0.0.1:8101/api/status` → JSON ok.
+
+## Next Steps
+- У себя в терминале: `git push origin master`, затем на сервере при необходимости: `cd /srv/seovibe/vb/repos/keyso-analizkon-key && git fetch origin && git merge --ff-only origin/master` (или `git pull --ff-only` если стабильно) и снова `docker compose up -d --build`.
+
