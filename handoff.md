@@ -2470,3 +2470,23 @@
 ## Next Steps
 - На сервере: `git fetch` + обновление до `origin/master` и при необходимости `docker compose up -d --build` (без `down -v`).
 
+---
+
+## Date
+2026-05-14
+
+## Summary of Changes
+- **seovb:** `git fetch origin`, затем **`git reset --hard origin/master`** до `ad1e19c` (на этом хосте `git merge --ff-only` из одной SSH-команды с Windows-клиента стабильно ронял OpenSSH с кодом `0xC0000005`; `reset --hard` к `origin/master` эквивалентен ff-only при отсутствии локальных коммитов на сервере). **`docker compose up -d --build`** без **`down -v`**. Проверка: `wget http://127.0.0.1:8101/api/status` → ok.
+
+## Files Changed
+- `handoff.md`
+
+## Risks / Known Issues
+- Если на сервере появятся незакоммиченные правки или локальные коммиты, **`reset --hard`** их затрёт — тогда лучше вручную на сервере `stash` / `merge`, не из этой среды.
+
+## Validation Performed
+- `docker compose ps` → `keyso-analyzer-app` Up, `127.0.0.1:8101->8000`.
+
+## Next Steps
+- При локальных правках на сервере предпочитать **`git pull --ff-only`** с серверного shell, а не `reset --hard` из автоматизации.
+
