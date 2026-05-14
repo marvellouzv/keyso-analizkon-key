@@ -2448,3 +2448,25 @@
 ## Next Steps
 - У себя в терминале: `git push origin master`, затем на сервере при необходимости: `cd /srv/seovibe/vb/repos/keyso-analizkon-key && git fetch origin && git merge --ff-only origin/master` (или `git pull --ff-only` если стабильно) и снова `docker compose up -d --build`.
 
+---
+
+## Date
+2026-05-14
+
+## Summary of Changes
+- **Push на GitHub выполнен** тем же способом, что и раньше у вас: `git push https://github.com/marvellouzv/keyso-analizkon-key.git master` — обходит SSH (`publickey`) и проблемы пути к `~/.ssh` на Windows; используется Git Credential Manager / сохранённый PAT.
+- В **README.md** добавлена короткая подсказка с этой командой для сценария «SSH не завёлся».
+
+## Files Changed
+- `README.md`
+- `handoff.md`
+
+## Risks / Known Issues
+- HTTPS-push требует настроенных учётных данных для `github.com` (иначе Git запросит логин/PAT).
+
+## Validation Performed
+- `git push https://github.com/marvellouzv/keyso-analizkon-key.git master` → `da6a92e..b20a696  master -> master`.
+
+## Next Steps
+- На сервере: `git fetch` + обновление до `origin/master` и при необходимости `docker compose up -d --build` (без `down -v`).
+

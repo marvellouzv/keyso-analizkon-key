@@ -65,6 +65,12 @@
 
 ## Привязка GitHub -> сервер (кратко)
 
+Если `git push origin master` падает на **SSH** (`publickey`, проблемы с `~/.ssh` на Windows с кириллицей в профиле), можно отправить ветку по **HTTPS** (подойдёт PAT или сохранённый логин в Git Credential Manager):
+
+```powershell
+git push https://github.com/marvellouzv/keyso-analizkon-key.git master
+```
+
 На сервере в своей директории `/srv/seovibe/<user>/app`:
 
 1. Клонирование:
