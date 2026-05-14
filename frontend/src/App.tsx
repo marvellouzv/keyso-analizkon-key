@@ -68,6 +68,14 @@ const BASE_OPTIONS = {
 } as const;
 const SERP_TOP_NUMBER_OPTIONS = [10, 20, 30, 50, 100] as const;
 
+type KeywordsSortValue = "ws|desc" | "wsk|desc" | "pos|asc";
+
+const KEYWORDS_SORT_OPTIONS: Array<{ value: KeywordsSortValue; label: string }> = [
+  { value: "ws|desc", label: "Базовая частотность" },
+  { value: "wsk|desc", label: "Точная частотность" },
+  { value: "pos|asc", label: "Лучшая позиция" },
+];
+
 type AnalyzeResponse = {
   analysis_id: number;
   domain: string;
@@ -116,6 +124,7 @@ type ParseSettings = {
   competitorsLimit: number;
   mainMaxPages: number;
   competitorsMaxPages: number;
+  keywordsSort: KeywordsSortValue;
   resultLimit: number;
   top50CompetitorsMin: number;
 };
@@ -130,6 +139,7 @@ const PRESET_OPTIONS: Array<{ id: string; label: string; settings: ParseSettings
       competitorsLimit: 10,
       mainMaxPages: 10,
       competitorsMaxPages: 10,
+      keywordsSort: "ws|desc",
       resultLimit: 500,
       top50CompetitorsMin: 3,
     },
@@ -141,6 +151,7 @@ const PRESET_OPTIONS: Array<{ id: string; label: string; settings: ParseSettings
       competitorsLimit: 15,
       mainMaxPages: 20,
       competitorsMaxPages: 15,
+      keywordsSort: "ws|desc",
       resultLimit: 1000,
       top50CompetitorsMin: 3,
     },
@@ -152,6 +163,7 @@ const PRESET_OPTIONS: Array<{ id: string; label: string; settings: ParseSettings
       competitorsLimit: 20,
       mainMaxPages: 30,
       competitorsMaxPages: 20,
+      keywordsSort: "ws|desc",
       resultLimit: 2000,
       top50CompetitorsMin: 3,
     },
@@ -400,6 +412,7 @@ function AnalyzerApp() {
     competitorsLimit: 10,
     mainMaxPages: 10,
     competitorsMaxPages: 10,
+    keywordsSort: "ws|desc",
     resultLimit: 500,
     top50CompetitorsMin: 3,
   });
@@ -412,6 +425,8 @@ function AnalyzerApp() {
   const [manualCompetitorsInput, setManualCompetitorsInput] = React.useState<string>("");
   const [excludedCompetitorsInput, setExcludedCompetitorsInput] = React.useState<string>(DEFAULT_EXCLUDED_COMPETITORS_INPUT);
   const [serpQueriesInput, setSerpQueriesInput] = React.useState<string>("");
+  const [competitorWordsFilterInput, setCompetitorWordsFilterInput] = React.useState<string>("");
+  const [competitorExcludeWordsInput, setCompetitorExcludeWordsInput] = React.useState<string>("");
   const [serpTopNumber, setSerpTopNumber] = React.useState<number>(10);
   const [serpRegionSearch, setSerpRegionSearch] = React.useState<string>("");
   const [serpRegionId, setSerpRegionId] = React.useState<number>(213);
@@ -486,8 +501,11 @@ function AnalyzerApp() {
         serp_region_id: serpRegionId || BASE_TO_YANDEX_REGION_ID[region] || 213,
         top50_competitors_min: settings.top50CompetitorsMin,
         main_max_pages: settings.mainMaxPages,
+        keywords_sort: settings.keywordsSort,
         competitors_max_pages: settings.competitorsMaxPages,
         result_limit: settings.resultLimit,
+        competitor_words_filter: competitorWordsFilterInput,
+        competitor_exclude_words: competitorExcludeWordsInput,
       });
 
       addLog("Данные успешно получены.");
@@ -1163,265 +1181,319 @@ function AnalyzerApp() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-4">
-          <div className="min-w-[240px] flex-1">
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              <FieldLabel text="Домен" hint="Можно вставлять домен или URL, например: https://www.example.com/." />
-            </label>
-            <input
-              className="app-input w-full rounded-md border border-slate-300 p-2 outline-none transition-all focus:ring-2 focus:ring-blue-500"
-              placeholder="https://www.example.com/"
-              value={domain}
-              onChange={(e) => setDomain(e.target.value)}
-              onBlur={(e) => setDomain(normalizeDomainInput(e.target.value))}
-            />
-            {showDomainError && (
-              <p className="mt-1 text-sm text-red-600">Введите корректный домен, например `example.com`.</p>
-            )}
-          </div>
-
-          <div className="w-56">
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              <FieldLabel text="База региона" hint="Поисковая база Keys.so: Яндекс/Google и выбранный регион." />
-            </label>
-            <select
-              value={region}
-              onChange={(e) => setRegion(e.target.value)}
-              className="app-select w-full rounded-md border border-slate-300 bg-white p-2 outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <optgroup label="Яндекс">
-                {BASE_OPTIONS.Yandex.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Google">
-                {BASE_OPTIONS.Google.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Другое">
-                {BASE_OPTIONS.Other.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-          </div>
-
-          <div className="app-card-soft app-density-pad w-full rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <p className="mb-3 text-sm font-semibold text-slate-700">Глубина парсинга</p>
-            <div className="mb-3 flex flex-wrap gap-2">
-              {PRESET_OPTIONS.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => {
-                    setSettings(preset.settings);
-                    setActivePreset(preset.id);
-                  }}
-                  className={`app-preset-chip rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
-                    activePreset === preset.id
-                      ? "app-preset-chip-active border-blue-600 bg-blue-600 text-white"
-                      : "app-preset-chip-idle border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-                  }`}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <label className="text-sm text-slate-700">
-                <FieldLabel text="Глубина для сайта" hint="Сколько страниц ключей собрать для исследуемого сайта." />
-                <select
-                  className="app-select mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
-                  value={settings.mainMaxPages}
-                  onChange={(e) => setSettings((s) => ({ ...s, mainMaxPages: Number(e.target.value) }))}
-                >
-                  {[10, 15, 20, 30].map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="text-sm text-slate-700">
-                <FieldLabel text="Количество конкурентов" hint="Сколько конкурентов запрашивать у Keys.so." />
-                <select
-                  className="app-select mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
-                  value={settings.competitorsLimit}
-                  onChange={(e) => setSettings((s) => ({ ...s, competitorsLimit: Number(e.target.value) }))}
-                >
-                  {[0, 3, 5, 10, 15, 20].map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="text-sm text-slate-700">
-                <FieldLabel text="Глубина для конкурентов" hint="Сколько страниц ключей собрать для каждого конкурента." />
-                <select
-                  className="app-select mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
-                  value={settings.competitorsMaxPages}
-                  onChange={(e) => setSettings((s) => ({ ...s, competitorsMaxPages: Number(e.target.value) }))}
-                >
-                  {[5, 10, 15, 20].map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="text-sm text-slate-700">
-                <FieldLabel text="Макс. строк в таблице" hint="Ограничение на итоговое количество строк в результатах." />
-                <select
-                  className="app-select mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
-                  value={settings.resultLimit}
-                  onChange={(e) => setSettings((s) => ({ ...s, resultLimit: Number(e.target.value) }))}
-                >
-                  {[500, 1000, 2000, 5000].map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="text-sm text-slate-700">
-                <FieldLabel
-                  text="Запросы за ТОП50, конкуренты"
-                  hint="Для запросов без позиции сайта: включаем строку, если в топ-10 найдено не меньше выбранного количества конкурентов."
+          <div className="flex flex-col gap-4">
+            <div className="app-card-soft app-density-pad w-full rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="mb-3 text-sm font-semibold text-slate-700">Общие настройки</p>
+              <div className="mb-3">
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  <FieldLabel text="Домен" hint="Можно вставлять домен или URL, например: https://www.example.com/." />
+                </label>
+                <input
+                  className="app-input w-full rounded-md border border-slate-300 p-2 outline-none transition-all focus:ring-2 focus:ring-blue-500"
+                  placeholder="https://www.example.com/"
+                  value={domain}
+                  onChange={(e) => setDomain(e.target.value)}
+                  onBlur={(e) => setDomain(normalizeDomainInput(e.target.value))}
                 />
-                <select
-                  className="app-select mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
-                  value={settings.top50CompetitorsMin}
-                  onChange={(e) => setSettings((s) => ({ ...s, top50CompetitorsMin: Number(e.target.value) }))}
-                >
-                  {[2, 3, 5, 10].map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
+                {showDomainError && (
+                  <p className="mt-1 text-sm text-red-600">Введите корректный домен, например `example.com`.</p>
+                )}
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <label className="text-sm text-slate-700">
+                  <FieldLabel
+                    text="Глубина сбора ключей сайта"
+                    hint="Сколько страниц ключей собрать для исследуемого сайта."
+                  />
+                  <select
+                    className="app-select mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                    value={settings.mainMaxPages}
+                    onChange={(e) => setSettings((s) => ({ ...s, mainMaxPages: Number(e.target.value) }))}
+                  >
+                    {[10, 15, 20, 30].map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm text-slate-700">
+                  <FieldLabel text="Макс. строк в таблице" hint="Ограничение на итоговое количество строк в результатах." />
+                  <select
+                    className="app-select mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                    value={settings.resultLimit}
+                    onChange={(e) => setSettings((s) => ({ ...s, resultLimit: Number(e.target.value) }))}
+                  >
+                    {[500, 1000, 2000, 5000].map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm text-slate-700">
+                  <FieldLabel text="База региона" hint="Поисковая база Keys.so: Яндекс/Google и выбранный регион." />
+                  <select
+                    value={region}
+                    onChange={(e) => setRegion(e.target.value)}
+                    className="app-select mt-1 w-full rounded-md border border-slate-300 bg-white p-2 outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <optgroup label="Яндекс">
+                      {BASE_OPTIONS.Yandex.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Google">
+                      {BASE_OPTIONS.Google.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Другое">
+                      {BASE_OPTIONS.Other.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <div className="app-card-soft app-density-pad w-full rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="mb-3 text-sm font-semibold text-slate-700">Настройка анализа конкурентов</p>
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {PRESET_OPTIONS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => {
+                        setSettings(preset.settings);
+                        setActivePreset(preset.id);
+                      }}
+                      className={`app-preset-chip rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+                        activePreset === preset.id
+                          ? "app-preset-chip-active border-blue-600 bg-blue-600 text-white"
+                          : "app-preset-chip-idle border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
                   ))}
-                </select>
-              </label>
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <label className="text-sm text-slate-700">
+                    <FieldLabel text="Количество конкурентов" hint="Сколько конкурентов запрашивать у Keys.so." />
+                    <select
+                      className="app-select mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                      value={settings.competitorsLimit}
+                      onChange={(e) => setSettings((s) => ({ ...s, competitorsLimit: Number(e.target.value) }))}
+                    >
+                      {[0, 3, 5, 10, 15, 20].map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
-              <div className="grid grid-cols-1 gap-3 md:col-span-2 md:grid-cols-2 xl:col-span-4">
-                <label className="text-sm text-slate-700">
-                  <FieldLabel
-                    text="Конкуренты вручную"
-                    hint="По одному домену в строке. Эти домены будут добавлены к конкурентам из API."
-                  />
-                  <textarea
-                    rows={5}
-                    className="app-input mt-1 h-[120px] w-full resize-y overflow-y-auto rounded-md border border-slate-300 bg-white p-2 font-mono text-sm"
-                    placeholder={"example-competitor.ru\nanother-site.ru"}
-                    value={manualCompetitorsInput}
-                    onChange={(e) => setManualCompetitorsInput(e.target.value)}
-                  />
-                  {requiresManualCompetitors && (
-                    <p className="mt-1 text-xs text-red-600">
-                      При значении `Количество конкурентов = 0` добавьте хотя бы один домен вручную или хотя бы один запрос в блоке `Из выдачи Яндекса`.
-                    </p>
-                  )}
-                </label>
+                  <label className="text-sm text-slate-700">
+                    <FieldLabel text="Глубина для конкурентов" hint="Сколько страниц ключей собрать для каждого конкурента." />
+                    <select
+                      className="app-select mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                      value={settings.competitorsMaxPages}
+                      onChange={(e) => setSettings((s) => ({ ...s, competitorsMaxPages: Number(e.target.value) }))}
+                    >
+                      {[5, 10, 15, 20].map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
-                <label className="text-sm text-slate-700">
-                  <FieldLabel
-                    text="Исключить конкуренты"
-                    hint="По одному домену в строке. Эти домены будут исключены из списка API-конкурентов, и система доберет следующий подходящий домен."
-                  />
-                  <textarea
-                    rows={5}
-                    className="app-input mt-1 h-[120px] w-full resize-y overflow-y-auto rounded-md border border-slate-300 bg-white p-2 font-mono text-sm"
-                    value={excludedCompetitorsInput}
-                    onChange={(e) => setExcludedCompetitorsInput(e.target.value)}
-                  />
-                </label>
+                  <label className="text-sm text-slate-700">
+                    <FieldLabel
+                      text="Приоритет сбора запросов"
+                      hint="Параметр sort в API Keys.so organic/keywords: в каком порядке отдаются ключи при постраничной выборке (для исследуемого сайта и для каждого конкурента). Пример: sort=pos|asc."
+                    />
+                    <select
+                      className="app-select mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                      value={settings.keywordsSort}
+                      onChange={(e) =>
+                        setSettings((s) => ({ ...s, keywordsSort: e.target.value as KeywordsSortValue }))
+                      }
+                    >
+                      {KEYWORDS_SORT_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
-                <div className="text-sm text-slate-700 md:col-span-2">
-                  <FieldLabel
-                    text="Из выдачи Яндекса"
-                    hint="1 запрос = 1 строка, максимум 10 запросов. Пустые строки и дубликаты игнорируются."
-                  />
-                  <textarea
-                    rows={5}
-                    className="app-input mt-1 h-[120px] w-full resize-y overflow-y-auto rounded-md border border-slate-300 bg-white p-2 font-mono text-sm"
-                    placeholder="Введите запросы, по одному на строку"
-                    value={serpQueriesInput}
-                    onChange={(e) => setSerpQueriesInput(e.target.value)}
-                  />
-                  {serpQueriesLimitError && <p className="mt-1 text-xs text-red-600">{serpQueriesLimitError}</p>}
+                  <label className="text-sm text-slate-700">
+                    <FieldLabel
+                      text="Кол-во конкурентов на запрос"
+                      hint="Для запросов без позиции сайта: включаем строку, если в топ-10 найдено не меньше выбранного количества конкурентов."
+                    />
+                    <select
+                      className="app-select mt-1 w-full rounded-md border border-slate-300 bg-white p-2"
+                      value={settings.top50CompetitorsMin}
+                      onChange={(e) => setSettings((s) => ({ ...s, top50CompetitorsMin: Number(e.target.value) }))}
+                    >
+                      {[2, 3, 5, 10].map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
-                  <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_1fr]">
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-slate-600">Домены из выдачи / запрос</label>
-                      <select
-                        className="app-select w-full rounded-md border border-slate-300 bg-white p-2 text-sm"
-                        value={serpTopNumber}
-                        onChange={(e) => setSerpTopNumber(Number(e.target.value))}
-                      >
-                        {SERP_TOP_NUMBER_OPTIONS.map((value) => (
-                          <option key={value} value={value}>
-                            {value}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-slate-600">Поиск региона</label>
-                      <input
-                        type="text"
-                        value={serpRegionSearch}
-                        onChange={(e) => setSerpRegionSearch(e.target.value)}
-                        placeholder="Введите город"
-                        className="app-input w-full rounded-md border border-slate-300 bg-white p-2 text-sm"
+                  <div className="grid grid-cols-1 gap-3 md:col-span-2 md:grid-cols-2 xl:col-span-4">
+                    <label className="text-sm text-slate-700">
+                      <FieldLabel
+                        text="Фильтр отбора по словам"
+                        hint="Только для сбора ключей конкурентов. В одной строке через «+» (например купить+час) — один запрос с фильтром wordLIKE по каждой части. Несколько непустых строк — отдельный запрос к API на каждую строку для каждого конкурента, результаты объединяются и дедуплицируются по фразе. Пустое поле — без отбора по словам (остаётся pos<=50 и исключения слов)."
                       />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-slate-600">Регион</label>
-                      <select
-                        className="app-select w-full rounded-md border border-slate-300 bg-white p-2 text-sm"
-                        value={serpRegionId}
-                        onChange={(e) => setSerpRegionId(Number(e.target.value))}
-                      >
-                        {filteredSerpRegions.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.label} ({item.id})
-                          </option>
-                        ))}
-                      </select>
+                      <textarea
+                        rows={4}
+                        className="app-input mt-1 h-[100px] w-full resize-y overflow-y-auto rounded-md border border-slate-300 bg-white p-2 font-mono text-sm"
+                        placeholder={"купить+час\nили несколько строк:\nкупить\nчас"}
+                        value={competitorWordsFilterInput}
+                        onChange={(e) => setCompetitorWordsFilterInput(e.target.value)}
+                      />
+                    </label>
+                    <label className="text-sm text-slate-700">
+                      <FieldLabel
+                        text="Исключить слова"
+                        hint="Каждая непустая строка добавляет условие wordNOT LIKE… ко всем запросам сбора ключей конкурентов; склеивается с pos<=50 и отбором по словам через ^."
+                      />
+                      <textarea
+                        rows={4}
+                        className="app-input mt-1 h-[100px] w-full resize-y overflow-y-auto rounded-md border border-slate-300 bg-white p-2 font-mono text-sm"
+                        placeholder={"цена\nскидка"}
+                        value={competitorExcludeWordsInput}
+                        onChange={(e) => setCompetitorExcludeWordsInput(e.target.value)}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 md:col-span-2 md:grid-cols-2 xl:col-span-4">
+                    <label className="text-sm text-slate-700">
+                      <FieldLabel
+                        text="Конкуренты вручную"
+                        hint="По одному домену в строке. Эти домены будут добавлены к конкурентам из API."
+                      />
+                      <textarea
+                        rows={5}
+                        className="app-input mt-1 h-[120px] w-full resize-y overflow-y-auto rounded-md border border-slate-300 bg-white p-2 font-mono text-sm"
+                        placeholder={"example-competitor.ru\nanother-site.ru"}
+                        value={manualCompetitorsInput}
+                        onChange={(e) => setManualCompetitorsInput(e.target.value)}
+                      />
+                      {requiresManualCompetitors && (
+                        <p className="mt-1 text-xs text-red-600">
+                          При значении `Количество конкурентов = 0` добавьте хотя бы один домен вручную или хотя бы один запрос в блоке `Из выдачи Яндекса`.
+                        </p>
+                      )}
+                    </label>
+
+                    <label className="text-sm text-slate-700">
+                      <FieldLabel
+                        text="Исключить конкуренты"
+                        hint="По одному домену в строке. Эти домены будут исключены из списка API-конкурентов, и система доберет следующий подходящий домен."
+                      />
+                      <textarea
+                        rows={5}
+                        className="app-input mt-1 h-[120px] w-full resize-y overflow-y-auto rounded-md border border-slate-300 bg-white p-2 font-mono text-sm"
+                        value={excludedCompetitorsInput}
+                        onChange={(e) => setExcludedCompetitorsInput(e.target.value)}
+                      />
+                    </label>
+
+                    <div className="text-sm text-slate-700 md:col-span-2">
+                      <FieldLabel
+                        text="Из выдачи Яндекса"
+                        hint="1 запрос = 1 строка, максимум 10 запросов. Пустые строки и дубликаты игнорируются."
+                      />
+                      <textarea
+                        rows={5}
+                        className="app-input mt-1 h-[120px] w-full resize-y overflow-y-auto rounded-md border border-slate-300 bg-white p-2 font-mono text-sm"
+                        placeholder="Введите запросы, по одному на строку"
+                        value={serpQueriesInput}
+                        onChange={(e) => setSerpQueriesInput(e.target.value)}
+                      />
+                      {serpQueriesLimitError && <p className="mt-1 text-xs text-red-600">{serpQueriesLimitError}</p>}
+
+                      <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_1fr]">
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-slate-600">Домены из выдачи / запрос</label>
+                          <select
+                            className="app-select w-full rounded-md border border-slate-300 bg-white p-2 text-sm"
+                            value={serpTopNumber}
+                            onChange={(e) => setSerpTopNumber(Number(e.target.value))}
+                          >
+                            {SERP_TOP_NUMBER_OPTIONS.map((value) => (
+                              <option key={value} value={value}>
+                                {value}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-slate-600">Поиск региона</label>
+                          <input
+                            type="text"
+                            value={serpRegionSearch}
+                            onChange={(e) => setSerpRegionSearch(e.target.value)}
+                            placeholder="Введите город"
+                            className="app-input w-full rounded-md border border-slate-300 bg-white p-2 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-slate-600">Регион</label>
+                          <select
+                            className="app-select w-full rounded-md border border-slate-300 bg-white p-2 text-sm"
+                            value={serpRegionId}
+                            onChange={(e) => setSerpRegionId(Number(e.target.value))}
+                          >
+                            {filteredSerpRegions.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.label} ({item.id})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-            </div>
-          </div>
-
-          <div className="flex items-end">
-              <button
-                onClick={() => mutation.mutate()}
-                disabled={mutation.isPending || !isDomainValid || requiresManualCompetitors || Boolean(serpQueriesLimitError)}
-                className="app-btn-primary h-[42px] rounded-md bg-blue-600 px-8 py-2 font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {mutation.isPending ? "Анализ..." : "Запустить"}
-              </button>
-            </div>
-            {mutation.isPending && (
-              <div className="w-full">
-                <div className="mt-2 h-2 w-full overflow-hidden rounded bg-slate-200">
-                  <div className="h-full bg-blue-600 transition-all duration-500" style={{ width: `${progressPercent}%` }} />
-                </div>
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => mutation.mutate()}
+                  disabled={mutation.isPending || !isDomainValid || requiresManualCompetitors || Boolean(serpQueriesLimitError)}
+                  className="app-btn-primary h-[42px] w-fit rounded-md bg-blue-600 px-8 py-2 font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {mutation.isPending ? "Анализ..." : "Запустить"}
+                </button>
+                {mutation.isPending && (
+                  <div className="w-full">
+                    <div className="mt-2 h-2 w-full overflow-hidden rounded bg-slate-200">
+                      <div className="h-full bg-blue-600 transition-all duration-500" style={{ width: `${progressPercent}%` }} />
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
         </div>
 
@@ -1768,7 +1840,7 @@ function AnalyzerApp() {
 
         {helpOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-            <div className="app-card w-full max-w-4xl rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
+            <div className="app-card w-full max-w-5xl rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <h3 className="text-lg font-semibold text-slate-900">Помощь по интерфейсу</h3>
                 <button
@@ -1780,83 +1852,268 @@ function AnalyzerApp() {
                 </button>
               </div>
 
-              <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1 text-sm text-slate-700">
-                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                  <p className="font-semibold text-slate-900">1) Домен</p>
-                  <p className="mt-1">Основной сайт для анализа. От него строится вся таблица сравнений.</p>
-                </div>
-
-                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                  <p className="font-semibold text-slate-900">2) База региона</p>
-                  <p className="mt-1">
-                    Выбор поисковой базы Keys.so (Яндекс/Google + регион). Влияет на все данные: ключи, конкурентов и позиции.
+              <div className="max-h-[75vh] space-y-4 overflow-y-auto pr-1 text-sm leading-relaxed text-slate-700">
+                <div className="rounded-md border border-blue-100 bg-blue-50/80 p-3 text-slate-800">
+                  <p className="font-semibold text-slate-900">Как устроен анализ (кратко)</p>
+                  <p className="mt-2">
+                    Сервис дергает Keys.so: сначала собираются ключи <strong>вашего домена</strong> (organic keywords, постранично,
+                    параметры глубины и <code className="rounded bg-white px-1">sort</code> из формы), затем список{" "}
+                    <strong>конкурентов</strong> (API / вручную / SERP). Для каждого конкурента снова organic keywords с фильтром{" "}
+                    <code className="rounded bg-white px-1">pos&lt;=50</code> и опциональными условиями по словам. На сервере таблицы
+                    сводятся в Pandas: фильтры по позициям сайта и конкурентов, ветка «только конкурентные» без ТОП50 сайта, метрика
+                    приоритета, лимит строк. Результат вы видите в таблице; часть настроек ниже таблицы влияет только на{" "}
+                    <strong>локальный</strong> просмотр (не пересчитывает API).
                   </p>
                 </div>
 
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                  <p className="font-semibold text-slate-900">3) Визуальный стиль интерфейса</p>
-                  <p className="mt-1">Меняет только оформление. На расчеты и API-запросы не влияет.</p>
+                  <p className="font-semibold text-slate-900">1) Общие настройки</p>
+                  <ul className="mt-2 list-disc space-y-1.5 pl-5">
+                    <li>
+                      <strong>Домен</strong> — исследуемый сайт. Можно вставить URL, хост нормализуется. От него строится вся матрица
+                      позиций.
+                    </li>
+                    <li>
+                      <strong>Глубина сбора ключей сайта</strong> — сколько страниц по 100 ключей запрашивать у Keys.so только для
+                      вашего домена (верхняя граница пагинации в отчете).
+                    </li>
+                    <li>
+                      <strong>Макс. строк в таблице</strong> — ограничение итогового числа строк после всех фильтров на бэкенде (не
+                      путать с глубиной постраничного сбора).
+                    </li>
+                    <li>
+                      <strong>База региона</strong> — параметр <code className="rounded bg-slate-200 px-1">base</code> в запросах Keys.so
+                      (Яндекс/Google и регион). Меняет и ключи, и конкурентов, и позиции.
+                    </li>
+                  </ul>
                 </div>
 
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                  <p className="font-semibold text-slate-900">4) Глубина парсинга</p>
-                  <p className="mt-1">Настройки влияют на скорость и объем данных:</p>
-                  <p className="mt-1">- Глубина для сайта: сколько страниц ключей брать у вашего домена.</p>
-                  <p>- Количество конкурентов: сколько конкурентов брать из API.</p>
-                  <p>- Глубина для конкурентов: сколько страниц ключей брать у каждого конкурента.</p>
-                  <p>- Макс. строк в таблице: лимит итогового вывода.</p>
-                  <p>- Запросы за ТОП50, конкуренты: фильтр для конкурентных ключей без позиций сайта в ТОП50.</p>
+                  <p className="font-semibold text-slate-900">2) Визуальный стиль интерфейса</p>
+                  <p className="mt-1">
+                    Только оформление (цвета, плотность таблицы). На расчеты, API и сохраненные в браузере данные столбца N не влияет.
+                  </p>
                 </div>
 
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                  <p className="font-semibold text-slate-900">5) Конкуренты вручную</p>
-                  <p className="mt-1">Дополнительные домены (по одному в строке), которые принудительно добавляются в анализ.</p>
+                  <p className="font-semibold text-slate-900">3) Настройка анализа конкурентов</p>
+                  <p className="mt-1 font-medium text-slate-800">Пресеты</p>
+                  <p className="mt-1">
+                    «Быстрый», «Баланс», «Глубокий» — готовые наборы лимитов конкурентов, глубины страниц, лимита строк и порога ТОП50.
+                    Нажатие подставляет значения в поля ниже (их всегда можно изменить вручную).
+                  </p>
+                  <p className="mt-3 font-medium text-slate-800">Количество конкурентов</p>
+                  <p className="mt-1">
+                    Сколько доменов запросить у Keys.so в organic competitors. Если указать <strong>0</strong>, нужны хотя бы
+                    конкуренты вручную или запросы в блоке SERP — иначе кнопка «Запустить» будет недоступна.
+                  </p>
+                  <p className="mt-3 font-medium text-slate-800">Глубина для конкурентов</p>
+                  <p className="mt-1">Максимальное число страниц organic keywords на <em>каждого</em> конкурента (по 100 строк на страницу в типичном ответе).</p>
+                  <p className="mt-3 font-medium text-slate-800">Приоритет сбора запросов (sort)</p>
+                  <p className="mt-1">
+                    В запросе к{" "}
+                    <code className="rounded bg-slate-200 px-1">https://api.keys.so/report/simple/organic/keywords</code> уходит
+                    параметр <code className="rounded bg-slate-200 px-1">sort</code> в формате{" "}
+                    <code className="rounded bg-slate-200 px-1">поле|направление</code>, например как в документации:{" "}
+                    <code className="rounded bg-slate-200 px-1">sort=pos%7Casc</code> (то есть <code className="rounded bg-slate-200 px-1">pos|asc</code>
+                    ). В приложении одно и то же значение применяется и к сбору ключей <strong>вашего сайта</strong>, и к конкурентам:
+                  </p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    <li>
+                      <strong>Базовая частотность</strong> — <code className="rounded bg-slate-200 px-1">ws|desc</code> (значение по
+                      умолчанию).
+                    </li>
+                    <li>
+                      <strong>Точная частотность</strong> — <code className="rounded bg-slate-200 px-1">wsk|desc</code>.
+                    </li>
+                    <li>
+                      <strong>Лучшая позиция</strong> — <code className="rounded bg-slate-200 px-1">pos|asc</code> (удобно, когда важен
+                      порядок по позициям; у конкурентов клиент может раньше остановить постраничный обход при сочетании с фильтром по
+                      позиции).
+                    </li>
+                  </ul>
+                  <p className="mt-3 font-medium text-slate-800">Фильтр отбора по словам и «Исключить слова» (только конкуренты)</p>
+                  <p className="mt-1">
+                    К базовому условию <code className="rounded bg-slate-200 px-1">pos&lt;=50</code> в параметре{" "}
+                    <code className="rounded bg-slate-200 px-1">filter</code> добавляются части через{" "}
+                    <code className="rounded bg-slate-200 px-1">^</code> согласно синтаксису Keys.so.
+                  </p>
+                  <p className="mt-2 font-medium text-slate-800">Пример одной строки с «+»</p>
+                  <p className="mt-1 font-mono text-xs text-slate-600">купить+час</p>
+                  <p className="mt-1">
+                    → один запрос на конкурента с включающим фильтром вида{" "}
+                    <code className="rounded bg-slate-200 px-1">wordLIKEкупить^wordLIKEчас</code> (обе части в одной строке объединяются
+                    через <code className="rounded bg-slate-200 px-1">^</code>).
+                  </p>
+                  <p className="mt-2 font-medium text-slate-800">Пример нескольких строк</p>
+                  <p className="mt-1 font-mono text-xs text-slate-600">
+                    купить
+                    <br />
+                    час
+                  </p>
+                  <p className="mt-1">
+                    → <strong>два</strong> отдельных запроса organic keywords на каждого конкурента (сначала с отбором по «купить»,
+                    затем по «час»), результаты <strong>объединяются</strong>, дубликаты по фразе снимаются, для совпавшего ключа
+                    оставляется строка с <strong>лучшей (меньшей) позицией</strong>.
+                  </p>
+                  <p className="mt-2 font-medium text-slate-800">Исключить слова</p>
+                  <p className="mt-1">
+                    Каждая непустая строка добавляет к <em>каждому</em> такому запросу фрагмент{" "}
+                    <code className="rounded bg-slate-200 px-1">wordNOT LIKE…</code>. Пример: строки «цена» и «скидка» дадут два
+                    исключающих условия, которые дописываются через <code className="rounded bg-slate-200 px-1">^</code> к уже собранному
+                    фильтру, например:{" "}
+                    <code className="break-all rounded bg-slate-200 px-1 text-xs">
+                      pos&lt;=50^wordLIKEкупить^wordLIKEчас^wordNOT LIKEцена^wordNOT LIKEскидка
+                    </code>
+                    .
+                  </p>
+                  <p className="mt-3 font-medium text-slate-800">Кол-во конкурентов на запрос</p>
+                  <p className="mt-1">
+                    Порог для ветки «конкурентные ключи без ТОП50 вашего сайта»: строка попадает в общий пул, если у сайта нет позиции в
+                    ТОП50, но в ТОП-10 по конкурентам не меньше выбранного числа доменов. Это настройка <strong>сервера</strong>, не
+                    путать с локальными фильтрами таблицы ниже.
+                  </p>
                 </div>
 
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                  <p className="font-semibold text-slate-900">6) Исключить конкуренты</p>
-                  <p className="mt-1">Домены, которые нужно исключить из анализа. Применяются только значения из текущей формы.</p>
+                  <p className="font-semibold text-slate-900">4) Конкуренты вручную</p>
+                  <p className="mt-1">По одному домену в строке. Домены принудительно добавляются к списку конкурентов с меткой источника РУЧ.</p>
+                  <p className="mt-2 text-xs text-slate-600">
+                    Пример: <span className="font-mono">shop.example.ru</span> и <span className="font-mono">rival.example.com</span> на
+                    двух строках.
+                  </p>
                 </div>
 
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                  <p className="font-semibold text-slate-900">7) Из выдачи Яндекса</p>
-                  <p className="mt-1">Добавляет конкурентов из SERP по вашим запросам.</p>
-                  <p className="mt-1">- Запросы: 1 строка = 1 запрос, максимум 10.</p>
-                  <p>- Домены из выдачи / запрос: сколько результатов брать с каждого запроса.</p>
-                  <p>- Поиск региона + Регион: регион для SERP-задач.</p>
+                  <p className="font-semibold text-slate-900">5) Исключить конкуренты</p>
+                  <p className="mt-1">
+                    Домены из этого поля не попадут в выборку API и не будут добавлены из SERP, даже если Keys.so их вернет. Учитывается
+                    только текущее содержимое формы в момент запуска.
+                  </p>
                 </div>
 
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                  <p className="font-semibold text-slate-900">8) Кнопка Запустить</p>
-                  <p className="mt-1">Стартует полный цикл: сбор ключей, сбор конкурентов, фильтрация, расчеты и формирование таблицы.</p>
+                  <p className="font-semibold text-slate-900">6) Из выдачи Яндекса (SERP)</p>
+                  <ul className="mt-2 list-disc space-y-1.5 pl-5">
+                    <li>До 10 запросов: одна строка — один поисковый запрос, пустые и дубли отбрасываются.</li>
+                    <li>Создается задача Keys.so SERP; после готовности из выдачи извлекаются домены (с ограничением по позициям в выдаче).</li>
+                    <li>
+                      <strong>Домены из выдачи / запрос</strong> — сколько верхних результатов брать с каждого запроса.
+                    </li>
+                    <li>
+                      <strong>Поиск региона</strong> и <strong>Регион</strong> — фильтр и выбор региона для SERP (числовой id региона уходит в API).
+                    </li>
+                  </ul>
                 </div>
 
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                  <p className="font-semibold text-slate-900">9) Статус выполнения</p>
-                  <p className="mt-1">Показывает этапы обработки и ошибки. Удобно для понимания, на каком шаге задержка.</p>
+                  <p className="font-semibold text-slate-900">7) Кнопка «Запустить»</p>
+                  <p className="mt-1">Запускает цепочку на сервере в типичном порядке:</p>
+                  <ol className="mt-2 list-decimal space-y-1.5 pl-5">
+                    <li>Сбор ключей вашего домена (organic keywords).</li>
+                    <li>Получение списка конкурентов из API (если лимит &gt; 0) с учетом исключений.</li>
+                    <li>При наличии SERP-запросов — постановка задач, ожидание, сбор доменов, слияние с конкурентами.</li>
+                    <li>Параллельный сбор ключей по каждому конкуренту с фильтрами и глубиной.</li>
+                    <li>Сведение таблицы, фильтры позиций, приоритет, обрезка по лимиту строк, сохранение в историю.</li>
+                  </ol>
+                  <p className="mt-2 text-xs text-slate-600">
+                    Во время ожидания показывается полоса прогресса и лог статуса; Keys.so может отвечать с задержкой (в т.ч. код 202 «отчет готовится» с повторными запросами).
+                  </p>
                 </div>
 
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                  <p className="font-semibold text-slate-900">10) Сводка и диагностика</p>
-                  <p className="mt-1">Показывают статистику результата: сколько строк, сколько конкурентов, сколько добавлено из SERP и т.д.</p>
+                  <p className="font-semibold text-slate-900">8) Статус выполнения</p>
+                  <p className="mt-1">
+                    Лог внизу формы: временные метки, шаги UI и сообщения по SERP (в т.ч. пропущенные конкуренты при ошибке API). Не
+                    заменяет серверные логи, но помогает понять, на чем застой.
+                  </p>
                 </div>
 
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                  <p className="font-semibold text-slate-900">11) Итоговая таблица</p>
-                  <p className="mt-1">Основной результат сравнения позиций.</p>
-                  <p className="mt-1">- Столбец N редактируется и сохраняется локально.</p>
-                  <p>- Заголовки доменов содержат источник: API / SERP / РУЧ.</p>
-                  <p>- Доступна сортировка по столбцам и ручная перестановка конкурентных колонок.</p>
+                  <p className="font-semibold text-slate-900">9) Сводка и диагностика</p>
+                  <p className="mt-1">
+                    <strong>Сводка</strong> — краткие числа по результату (фразы, конкуренты, добавленные из SERP).{" "}
+                    <strong>Диагностика этапов</strong> — сколько строк осталось после каждого крупного шага на сервере (сырые ключи
+                    сайта → уникальные → после соединения с конкурентами → после фильтра позиций сайта → после фильтра по конкурентам →
+                    ветка только конкурентных → после слияния → финальный лимит). Раскрытие этапа показывает превью строк (данные уже
+                    пришли с сервера).
+                  </p>
                 </div>
 
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                  <p className="font-semibold text-slate-900">12) История</p>
-                  <p className="mt-1">Позволяет открыть и восстановить прошлые анализы без повторного запуска.</p>
+                  <p className="font-semibold text-slate-900">10) Итоговая таблица и панель над ней</p>
+                  <p className="mt-1 font-medium text-slate-800">Откуда берутся строки</p>
+                  <p className="mt-1">
+                    После анализа сервер отдает «плотный» набор строк (<code className="rounded bg-slate-200 px-1">table_pool_data</code>
+                    ), а панель фильтров над таблицей отбирает подмножество для отображения <strong>без повторного вызова API</strong>.
+                    Лимит «Макс. строк в таблице» из формы задается при запуске; ползунок «Показать строк» может показывать меньше для
+                    удобства чтения.
+                  </p>
+                  <p className="mt-1">
+                    Локальные фильтры: позиция вашего сайта (или «все»), сколько конкурентов в выбранном ТОП должно совпасть, порог для
+                    ветки без ТОП50 сайта — пересчитывают только видимые строки из пула.
+                  </p>
+                  <p className="mt-3 font-medium text-slate-800">Цвета позиций</p>
+                  <p className="mt-1">Условная подсветка: лучшие позиции (например 1–3 и 4–10) выделяются фоном для быстрого сканирования.</p>
+                  <p className="mt-3 font-medium text-slate-800">Заголовки конкурентов: API / SERP / РУЧ</p>
+                  <p className="mt-1">Показывают, откуда взялся домен в этом запуске анализа.</p>
+                  <p className="mt-3 font-medium text-slate-800">Сортировка и колонки</p>
+                  <ul className="mt-2 list-disc space-y-1.5 pl-5">
+                    <li>Клик по заголовку столбца сортирует таблицу; повторный клик по тому же столбцу переключает направление (↑/↓).</li>
+                    <li>
+                      Конкурентные колонки (не ваш сайт) можно <strong>перетаскивать</strong> мышью за заголовок, чтобы изменить порядок
+                      — порядок сохраняется в <code className="rounded bg-slate-200 px-1">localStorage</code> для данного{" "}
+                      <code className="rounded bg-slate-200 px-1">analysis_id</code>.
+                    </li>
+                    <li>
+                      У правого края заголовков есть зона изменения ширины колонки (как в Excel): потяните, чтобы расширить или сузить.
+                    </li>
+                    <li>
+                      Кнопка копирования выгружает таблицу в буфер в виде TSV (удобно вставить в Excel): в том числе столбец N, запрос,
+                      частотность, метрики и позиции.
+                    </li>
+                  </ul>
+                  <p className="mt-3 font-medium text-slate-800">Столбец N — подробно</p>
+                  <p className="mt-1">
+                    Это <strong>ваш рабочий порядковый номер</strong> для строки (ключевой фразы). Значения <strong>не уходят на сервер</strong> и{" "}
+                    <strong>не участвуют</strong> в расчете позиций Keys.so — они нужны для удобства КП: проставить приоритет, потом
+                    отсортировать таблицу и скопировать в отчет.
+                  </p>
+                  <ul className="mt-2 list-disc space-y-1.5 pl-5">
+                    <li>
+                      В ячейке допускаются только <strong>цифры</strong>, максимум <strong>три символа</strong> (лишнее отбрасывается при вводе).
+                    </li>
+                    <li>
+                      Значения сохраняются в <code className="rounded bg-slate-200 px-1">localStorage</code> отдельно для каждого
+                      сохраненного анализа (ключ привязан к <code className="rounded bg-slate-200 px-1">analysis_id</code>): при
+                      повторном открытии истории номера на месте; очистка данных браузера сотрет и их.
+                    </li>
+                    <li>
+                      <strong>Двойной щелчок по пустой ячейке N</strong> автоматически подставляет цифру <strong>1</strong> — это быстрый
+                      старт: не нужно вводить первую цифру с клавиатуры, сразу можно дописать нужное число (например получить{" "}
+                      <span className="font-mono">12</span> или заменить на <span className="font-mono">3</span>). Если в поле уже что-то
+                      введено, двойной щелчок <strong>не меняет</strong> значение — отредактируйте как обычно (клик и ввод с клавиатуры).
+                    </li>
+                    <li>
+                      Чтобы <strong>поставить выбранные запросы в начало таблицы</strong>, проставьте в N меньшие числа (например 1, 2, 3…),
+                      оставьте пустыми строки, которые должны уйти вниз при сортировке по N, затем <strong>щелкните по заголовку «N»</strong>{" "}
+                      для сортировки: при первом клике обычно включается порядок по возрастанию — строки с заполненным N окажутся выше
+                      пустых. При необходимости второй клик по «N» переключит направление сортировки.
+                    </li>
+                  </ul>
                 </div>
 
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                  <p className="font-semibold text-slate-900">13) Хотелки</p>
-                  <p className="mt-1">Список предложений по сервису: добавление, редактирование, отметка выполненных.</p>
+                  <p className="font-semibold text-slate-900">11) История</p>
+                  <p className="mt-1">
+                    Список прошлых запусков. «Восстановить» подгружает сохраненный результат с сервера (таблица, конкуренты, сводка).
+                    Локальные N и порядок колонок подтягиваются из браузера, если ключи в <code className="rounded bg-slate-200 px-1">localStorage</code> еще есть.
+                  </p>
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <p className="font-semibold text-slate-900">12) Хотелки</p>
+                  <p className="mt-1">Внутренний список пожеланий к сервису: добавление текста, редактирование, отметка «выполнено».</p>
                 </div>
               </div>
             </div>

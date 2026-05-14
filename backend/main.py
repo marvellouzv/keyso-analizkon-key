@@ -15,6 +15,12 @@ import models
 import schemas
 from auth_module import AuthConfig, init_auth_module
 from services.analyzer import SEOAnalyzer
+from services.competitor_keyword_filters import (
+    build_competitor_filter_string,
+    merge_keyword_rows_by_word,
+    parse_exclude_fragments,
+    parse_include_lines,
+)
 from services.keys_so import KeysSoClient
 
 load_dotenv()
@@ -61,6 +67,7 @@ BASE_TO_YANDEX_REGION_ID = {
     "tom": 67,
 }
 SERP_TOP_NUMBER_OPTIONS = {10, 20, 30, 50, 100}
+COMPETITOR_KEYWORDS_MAX_POS = 50
 
 
 def _normalize_domain(value: str) -> str:
@@ -211,7 +218,7 @@ async def analyze(
             max_pos=None,
             per_page=100,
             max_pages=request.main_max_pages,
-            sort="ws|desc",
+            sort=request.keywords_sort,
         )
         if not main_keys:
             raise HTTPException(status_code=404, detail="Keywords not found for domain")
@@ -388,13 +395,33 @@ async def analyze(
         async def fetch_competitor(comp: str):
             async with sem:
                 try:
-                    data = await keys_client.get_keywords_top_positions(
-                        comp,
-                        request.base,
-                        max_pos=50,
-                        per_page=100,
-                        max_pages=request.competitors_max_pages,
-                    )
+                    exclude_frags = parse_exclude_fragments(request.competitor_exclude_words)
+                    include_frags = parse_include_lines(request.competitor_words_filter)
+
+                    if include_frags:
+                        filter_rounds = [
+                            build_competitor_filter_string(COMPETITOR_KEYWORDS_MAX_POS, inc, exclude_frags)
+                            for inc in include_frags
+                        ]
+                    else:
+                        filter_rounds = [
+                            build_competitor_filter_string(COMPETITOR_KEYWORDS_MAX_POS, None, exclude_frags)
+                        ]
+
+                    merged_batches: list[dict] = []
+                    for filt in filter_rounds:
+                        batch = await keys_client.get_keywords_top_positions(
+                            comp,
+                            request.base,
+                            max_pos=COMPETITOR_KEYWORDS_MAX_POS,
+                            per_page=100,
+                            max_pages=request.competitors_max_pages,
+                            sort=request.keywords_sort,
+                            filter_string=filt,
+                        )
+                        merged_batches.extend(batch)
+
+                    data = merge_keyword_rows_by_word(merged_batches)
                     return comp, data
                 except Exception as exc:
                     skipped_competitors.append({"domain": comp, "error": str(exc)[:300]})
@@ -445,8 +472,11 @@ async def analyze(
                 "serp_top_number": serp_top_number,
                 "top50_competitors_min": request.top50_competitors_min,
                 "main_max_pages": request.main_max_pages,
+                "keywords_sort": request.keywords_sort,
                 "competitors_max_pages": request.competitors_max_pages,
                 "result_limit": request.result_limit,
+                "competitor_words_filter": request.competitor_words_filter,
+                "competitor_exclude_words": request.competitor_exclude_words,
             },
         }
 

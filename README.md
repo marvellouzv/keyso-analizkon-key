@@ -197,6 +197,8 @@ The analyze form now has configurable depth controls (defaults match previous be
 - analyzed site position range
 - main/competitor page depth
 - result row limit
+- **keywords_sort** (optional body field, default `ws|desc`): Keys.so `sort` for `/report/simple/organic/keywords` — `ws|desc` (базовая частотность), `wsk|desc` (точная), `pos|asc` (лучшая позиция); задаёт порядок постраничной выборки ключей для сайта и конкурентов.
+- **competitor_words_filter**, **competitor_exclude_words** (optional strings, default empty): multiline text for competitor-only organic `filter` (`pos<=50` plus `wordLIKE` / `wordNOT LIKE` parts per Keys.so rules); multiple non-empty lines in the include field run separate API rounds per competitor, then merge.
 
 These settings are sent to backend and applied during Keys.so collection and final filtering.
 

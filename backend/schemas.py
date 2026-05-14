@@ -1,6 +1,8 @@
-﻿from typing import Dict, List
+﻿from typing import Dict, List, Literal
 
 from pydantic import BaseModel, Field
+
+KeywordsSort = Literal["ws|desc", "wsk|desc", "pos|asc"]
 
 
 class AnalyzeRequest(BaseModel):
@@ -13,11 +15,14 @@ class AnalyzeRequest(BaseModel):
     top50_competitors_min: int = Field(default=3, ge=1, le=20)
     main_min_pos: int = Field(default=10, ge=1, le=100)
     main_max_pages: int = Field(default=10, ge=1, le=30)
+    keywords_sort: KeywordsSort = "ws|desc"
     competitors_max_pages: int = Field(default=5, ge=1, le=20)
     result_limit: int = Field(default=500, ge=50, le=5000)
     serp_queries: List[str] = Field(default_factory=list, max_length=10)
     serp_region_id: int = Field(default=213, ge=1)
     serp_top_number: int = Field(default=10, ge=1)
+    competitor_words_filter: str = Field(default="", max_length=8000)
+    competitor_exclude_words: str = Field(default="", max_length=8000)
 
 
 class SerpSummary(BaseModel):

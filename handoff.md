@@ -2272,3 +2272,100 @@
 - Redeploy and log in once.
 - Verify that after `docker compose restart app` session remains valid (or at least user record/session rows remain in DB).
 
+## Date
+2026-05-14
+
+## Summary of Changes
+- Reorganized the main analysis form in the UI: added a soft card **«Общие настройки»** with domain on the first row and a second row **Глубина сбора ключей сайта** → **Макс. строк в таблице** → **База региона** (same `settings` / `region` bindings as before).
+- Renamed the former **«Глубина парсинга»** block to **«Настройка анализа конкурентов»**; moved site depth and table row limit out of that block; renamed **«Запросы за ТОП50, конкуренты»** to **«Кол-во конкурентов на запрос»**.
+- Updated the in-app **Помощь** copy to match the new blocks and labels (items renumbered 1–12).
+- Fixed JSX structure: an extra closing `</div>` was required for the row that wraps the competitors card, the **Запустить** button, and the progress bar.
+
+## Files Changed
+- `frontend/src/App.tsx`
+- `handoff.md`
+
+## Risks / Known Issues
+- None beyond usual layout quirks on very narrow viewports (grid stacks to one column as before).
+
+## Validation Performed
+- `npm run build` in `frontend` (TypeScript + Vite) succeeded after the layout and JSX fix.
+
+## Next Steps
+- Smoke-test the form: presets still update all settings; run one short analysis if API is available.
+
+
+## Date
+2026-05-14
+
+## Summary of Changes
+- Added **Приоритет сбора запросов** to the competitor analysis card: maps to Keys.so organic keywords API parameter `sort` (`ws|desc` / `wsk|desc` / `pos|asc`), default **Базовая частотность** (`ws|desc`).
+- Backend `POST /api/analyze` accepts `keywords_sort` (validated enum); both main-site and competitor keyword pagination use this value. Stored in history payload `request.keywords_sort`.
+- README: documented the new request field.
+
+## Files Changed
+- `frontend/src/App.tsx`
+- `backend/schemas.py`
+- `backend/main.py`
+- `README.md`
+- `handoff.md`
+
+## Risks / Known Issues
+- With `pos|asc` and competitor `max_pos=50`, pagination may stop early when positions exceed the filter (existing client behavior). Other sort modes scan pages without that early stop.
+
+## Validation Performed
+- `python -m py_compile` on `backend/main.py`, `backend/schemas.py`
+- `npm run build` in `frontend`
+
+## Next Steps
+- Run a real analysis against Keys.so with each sort mode if quotas allow.
+
+
+## Date
+2026-05-14
+
+## Summary of Changes
+- **Фильтр отбора по словам** and **Исключить слова** (50/50 row) in the competitor settings card; values sent as `competitor_words_filter` and `competitor_exclude_words` on `POST /api/analyze`.
+- Backend: module `services/competitor_keyword_filters.py` parses lines / `+` into `wordLIKE` fragments, exclude lines into `wordNOT LIKE…`, builds `filter` as `pos<=50^…` merged with `^`; multiple include lines trigger multiple Keys.so rounds per competitor, then merge + dedupe by keyword (best position kept).
+- `KeysSoClient.get_keywords_top_positions(..., filter_string=...)` sends a full `filter` when set (competitor path only).
+
+## Files Changed
+- `frontend/src/App.tsx`
+- `backend/schemas.py`
+- `backend/main.py`
+- `backend/services/keys_so.py`
+- `backend/services/competitor_keyword_filters.py` (new)
+- `README.md`
+- `handoff.md`
+
+## Risks / Known Issues
+- Keys.so may reject unusual characters in filter tokens; no escaping added.
+- More include lines multiply API calls per competitor (rate limits / time).
+
+## Validation Performed
+- `python -m py_compile` on touched backend modules
+- `npm run build` in `frontend`
+
+## Next Steps
+- Smoke-test with one `+` line, multi-line includes, and exclude lines against live API.
+
+
+## Date
+2026-05-14
+
+## Summary of Changes
+- Expanded in-app **Помощь** modal: pipeline overview, detailed Keys.so `sort`/`filter` examples (word filters), table/local filters, clipboard TSV, column resize/drag; accurate **столбец N** docs (digits-only, `localStorage` per `analysis_id`, double-click on empty inserts `1`, sort-by-N to bring prioritized rows to top). Wider modal (`max-w-5xl`), taller scroll (`max-h-[75vh]`).
+
+## Files Changed
+- `frontend/src/App.tsx`
+- `handoff.md`
+
+## Risks / Known Issues
+- Help text may drift if backend/frontend behavior changes; keep in sync on future edits.
+
+## Validation Performed
+- `read_lints` on `frontend/src/App.tsx`
+
+## Next Steps
+- Optional: `npm run build` if preparing a release bundle.
+

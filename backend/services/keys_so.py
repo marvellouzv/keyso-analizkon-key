@@ -206,6 +206,7 @@ class KeysSoClient:
         per_page: int = 100,
         max_pages: int = 5,
         sort: str = "pos|asc",
+        filter_string: Optional[str] = None,
     ) -> List[Dict]:
         await self._rate_limit()
         async with httpx.AsyncClient(timeout=30.0, trust_env=False) as client:
@@ -220,7 +221,9 @@ class KeysSoClient:
                     "page": page,
                     "sort": sort,
                 }
-                if max_pos is not None:
+                if filter_string is not None:
+                    params["filter"] = filter_string
+                elif max_pos is not None:
                     params["filter"] = f"pos<={max_pos}"
                 print(f"      [API] Request top positions for {domain}, page {page}...")
                 resp = await self._get_with_report_wait(client, url, params)
