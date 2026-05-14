@@ -2354,6 +2354,27 @@
 2026-05-14
 
 ## Summary of Changes
+- **Git push to GitHub:** failed from this environment with `Permission denied (publickey)` — remote is `git@github.com:marvellouzv/keyso-analizkon-key.git`; need a GitHub SSH key in the agent profile or switch `origin` to HTTPS + credential/PAT, then `git push origin master` (local was **1 commit ahead** of `origin/master` at time of attempt).
+- **Server (`ssh seovb`):** verified repo path `/srv/seovibe/vb/repos/keyso-analizkon-key`. Ran **`docker compose up -d --build`** only (no `down`, **no `down -v`**), so named volume **`keyso_data`** and SQLite at `SQLITE_DB_PATH` remain per README/docker-compose. Build output: image rebuilt, container `keyso-analyzer-app` recreated and started.
+- **Note:** until the local commit is pushed, `git pull` on the server will not pick up that commit; after a successful push, run on server: `cd /srv/seovibe/vb/repos/keyso-analizkon-key && git pull --ff-only origin master && docker compose up -d --build`.
+
+## Files Changed
+- `handoff.md`
+
+## Risks / Known Issues
+- Never run `docker compose down -v` on server — removes `keyso_data` and wipes history/auth/wishes (documented in README).
+
+## Validation Performed
+- SSH `seovb` reached server; `docker compose up -d --build` exited 0 with expected log.
+
+## Next Steps
+- User: fix GitHub auth → push → on server `git pull --ff-only origin master` → `docker compose up -d --build` if needed → `curl http://127.0.0.1:8101/api/status`.
+
+
+## Date
+2026-05-14
+
+## Summary of Changes
 - Expanded in-app **Помощь** modal: pipeline overview, detailed Keys.so `sort`/`filter` examples (word filters), table/local filters, clipboard TSV, column resize/drag; accurate **столбец N** docs (digits-only, `localStorage` per `analysis_id`, double-click on empty inserts `1`, sort-by-N to bring prioritized rows to top). Wider modal (`max-w-5xl`), taller scroll (`max-h-[75vh]`).
 
 ## Files Changed
@@ -2368,4 +2389,41 @@
 
 ## Next Steps
 - Optional: `npm run build` if preparing a release bundle.
+
+
+## Date
+2026-05-14
+
+## Summary of Changes
+- Restored missing **`DEPLOY_GUIDE.md`** (README already linked it; handoff referenced updates but file was absent in tree): GitHub SSH host key / `GIT_SSH_COMMAND`, publickey → HTTPS+PAT, server `git pull` vs `reset --hard`, **`docker compose up -d --build`** without **`down -v`**, health `curl` with `APP_PORT`.
+
+## Files Changed
+- `DEPLOY_GUIDE.md` (new)
+- `handoff.md`
+
+## Validation Performed
+- N/A (documentation only)
+
+## Next Steps
+- ~~Commit and push `DEPLOY_GUIDE.md`~~ — **не применимо намеренно:** файл в **`.git/info/exclude`** этой копии, в remote он не должен попадать (приватные пути/хосты). Для той же политики у всей команды — строка в **`.gitignore`** в репозитории.
+
+---
+
+## Date
+2026-05-14
+
+## Summary of Changes
+- Зафиксировано: **`DEPLOY_GUIDE.md`** исключён из git в этой копии через **`.git/info/exclude`** (не пушится, не «пропал» из дерева по ошибке).
+
+## Files Changed
+- `handoff.md`
+
+## Risks / Known Issues
+- `exclude` действует только на этот клон; у коллег без той же строки файл может случайно попасть в коммит, если политика «только локально» должна быть общей — тогда **`.gitignore`** в репо.
+
+## Validation Performed
+- `git check-ignore -v DEPLOY_GUIDE.md` → `.git/info/exclude:7:DEPLOY_GUIDE.md`
+
+## Next Steps
+- По желанию: перенести правило в **`.gitignore`** в git и в `README.md` одной фразой указать, что полный деплой — внутренний/локальный гайд.
 
